@@ -1140,7 +1140,7 @@ function makeBatchId(d = /* @__PURE__ */ new Date()) {
 }
 
 // src/ui/app.js
-var VERSION = true ? "0.2.0" : "dev";
+var VERSION = true ? "0.3.0" : "dev";
 var $ = (id) => document.getElementById(id);
 var esc2 = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 var ffmpegBase = new URL("vendor/", document.baseURI).href;
