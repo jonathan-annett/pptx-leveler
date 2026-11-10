@@ -39,7 +39,7 @@
     </div>
     <div id="drop" class="drop" tabindex="0" role="button" aria-describedby="drop-hint">
       <p><strong>Drop .pptx files or a folder here</strong></p>
-      <p id="drop-hint" class="muted">or <button type="button" id="add" class="link">choose files</button>. Files stay on this computer; nothing is uploaded.</p>
+      <p id="drop-hint" class="muted">or <button type="button" id="add" class="link">choose files</button>. Files stay on this computer; nothing is uploaded (<a href="#privacy">how you can check</a>).</p>
     </div>
     <ul id="decks" class="decks"></ul>
   </section>
@@ -114,8 +114,22 @@
   </section>
 </main>
 
-<footer class="foot muted small">
-  <span id="version"></span> · Loudness per ITU-R BS.1770-4 · Volume curve <span id="curve"></span>
+<footer class="foot small">
+  <div class="foot-row">
+    <p id="privacy" class="trust">
+      <strong>Nothing is uploaded.</strong> Your presentations are read and written on this computer only. This page's
+      security policy lets the browser connect back to volume-fix.com and nowhere else, and the exact code it runs is
+      published, readable, on <a href="https://github.com/jonathan-annett/pptx-leveler" target="_blank" rel="noopener noreferrer">GitHub</a>.
+    </p>
+    <div class="support">
+      <a class="bmc" href="https://www.buymeacoffee.com/sophtwhere" target="_blank" rel="noopener noreferrer"><span aria-hidden="true">☕</span> Buy me a coffee</a>
+      <details class="qr">
+        <summary>Scan with your phone</summary>
+        <img src="icons/bmc-qr.svg" width="140" height="140" alt="QR code for buymeacoffee.com/sophtwhere">
+      </details>
+    </div>
+  </div>
+  <p class="muted"><span id="version"></span> · Loudness per ITU-R BS.1770-4 · Volume curve <span id="curve"></span></p>
 </footer>
 
 <dialog id="dlg">

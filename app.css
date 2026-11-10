@@ -108,8 +108,8 @@ tbody tr:last-child td { border-bottom: 0; }
 td.c-n, th.c-n { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
 td.c-id, th.c-id { text-align: right; color: var(--muted); font-variant-numeric: tabular-nums; }
 td.c-skip, th.c-skip { text-align: center; width: 1%; }
-td.deck-name { max-width: 260px; overflow-wrap: anywhere; }
-td.clip-name { max-width: 280px; overflow-wrap: anywhere; }
+td.deck-name { min-width: 130px; max-width: 260px; overflow-wrap: anywhere; }
+td.clip-name { min-width: 160px; max-width: 280px; overflow-wrap: anywhere; }
 tr.inactive td:not(.c-skip) { color: var(--muted); }
 tr.anchor td { background: var(--anchor-soft); }
 .empty { padding: 16px; margin: 0; }
@@ -141,6 +141,16 @@ dialog menu { display: flex; justify-content: flex-end; gap: 8px; padding: 0; ma
 dialog ul { padding-left: 20px; max-height: 40vh; overflow: auto; }
 
 .foot { padding-top: 8px; padding-bottom: 24px; }
+.foot a { color: var(--accent); }
+.foot-row { display: flex; flex-wrap: wrap; gap: 12px 24px; align-items: flex-start; justify-content: space-between; border-top: 1px solid var(--line); padding-top: 14px; }
+.trust { margin: 0; flex: 1 1 420px; color: var(--muted); }
+.trust strong { color: var(--fg); font-weight: 600; }
+.support { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
+.bmc { display: inline-flex; align-items: center; gap: 6px; padding: 4px 12px; border-radius: 99px; background: #ffdd00; color: #000 !important; text-decoration: none; font-weight: 600; font-size: 13px; border: 1px solid #000; opacity: 0.85; transition: opacity .15s; }
+.bmc:hover, .bmc:focus-visible { opacity: 1; }
+.qr summary { cursor: pointer; color: var(--muted); font-size: 12px; text-align: right; }
+.qr img { display: block; margin-top: 6px; border-radius: 6px; background: #fff; padding: 4px; }
+@media (max-width: 640px) { .support { align-items: flex-start; } .qr summary { text-align: left; } }
 
 @media (max-width: 640px) {
   .deck { grid-template-columns: 1fr auto; }

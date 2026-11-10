@@ -1,15 +1,1019 @@
-var Re={version:"placeholder-1",description:"PLACEHOLDER until measured: assumes PowerPoint's vol is linear amplitude, dB = 20*log10(vol/100000). Replace with measured points from the calibration helper (milestone 7) for Office 365 PowerPoint 16.0.20527.",powerpoint:"unmeasured",type:"amplitude"};function je(e){if(!e||typeof e.version!="string")throw new Error("volume curve: missing version");if(e.type==="amplitude")return e;if(e.type!=="table")throw new Error(`volume curve: unknown type ${e.type}`);let n=[...e.points].sort((t,r)=>t[0]-r[0]);if(n.length<2)throw new Error("volume curve: need at least 2 points");for(let t=0;t<n.length;t++){let[r,i]=n[t];if(!(r>0&&r<=1e5)||!Number.isFinite(i))throw new Error(`volume curve: bad point ${n[t]}`);if(t&&!(r>n[t-1][0]&&i>n[t-1][1]))throw new Error("volume curve: points must be strictly increasing in vol and dB")}if(n[n.length-1][0]!==1e5||n[n.length-1][1]!==0)throw new Error("volume curve: last point must be [100000, 0]");return{...e,points:n}}function qe(e,n,t){let r=1;for(;r<n.length-1&&e>n[r];)r++;let i=(e-n[r-1])/(n[r]-n[r-1]);return t[r-1]+i*(t[r]-t[r-1])}function j(e,n){if(!(e>0))return-1/0;if(n.type==="amplitude")return 20*Math.log10(e/1e5);let t=n.points.map(i=>Math.log10(i[0])),r=n.points.map(i=>i[1]);return qe(Math.log10(e),t,r)}function We(e,n){if(e===-1/0)return 0;if(n.type==="amplitude")return 1e5*Math.pow(10,e/20);let t=n.points.map(i=>i[1]),r=n.points.map(i=>Math.log10(i[0]));return Math.pow(10,qe(e,t,r))}function Ge(e,n){return n.type==="table"&&e<n.points[0][1]}var H={p:"http://schemas.openxmlformats.org/presentationml/2006/main",a:"http://schemas.openxmlformats.org/drawingml/2006/main",r:"http://schemas.openxmlformats.org/officeDocument/2006/relationships",p14:"http://schemas.microsoft.com/office/powerpoint/2010/main",mc:"http://schemas.openxmlformats.org/markup-compatibility/2006",rel:"http://schemas.openxmlformats.org/package/2006/relationships"};var Vn=H.p,Bn=H.a,Rn=H.r,jn=H.p14,qn=H.mc;var He={OK:"ok",LINKED:"skipped-linked",MUTED:"skipped-muted",VOL0:"skipped-vol0",NO_TIMING:"no-timing-node",MISSING_MEDIA:"missing-media"};function Xe(e){let n=e.container==="slide"&&e.slideNumber!=null?`slide${e.slideNumber}`:e.partName;return`${e.fileName}|${n}|${e.instance}`}var Vt={keepOriginalVolume:!1,warnAttenuationDb:15,optOutWarnDb:1};function Ke(e,n){let t={...Vt,...n};if(!t.curve)throw new Error("planGains: curve required");let r=s=>s.status==="ok"&&!s.optOut&&!s.silent&&Number.isFinite(s.loudness),i=e.filter(r),o=i.length?Math.min(...i.map(s=>s.loudness)):null,f=i.length?Math.max(...i.map(s=>s.loudness)):null,l=e.map(s=>{let h={key:s.key,oldVol:s.vol,loudness:s.loudness,newVol:null,gainDb:null,change:!1,warnings:[]};if(!r(s)){let y="skipped",d=s.status;s.status==="ok"&&s.optOut?(y="opted-out",d="opted-out"):s.status==="ok"&&(s.silent||!Number.isFinite(s.loudness))&&(d="silent");let m={...h,role:y,reason:d};return y==="opted-out"&&o!=null&&Number.isFinite(s.loudness)&&s.vol>0&&(m.levelVsAnchorDb=s.loudness+j(s.vol,t.curve)-o,m.levelVsAnchorDb<-t.optOutWarnDb&&m.warnings.push("will-play-quiet"),m.levelVsAnchorDb>t.optOutWarnDb&&m.warnings.push("will-play-loud")),m}let v=o-s.loudness;t.keepOriginalVolume&&s.vol>0&&(v+=j(s.vol,t.curve));let a=We(v,t.curve),c=[],u=Math.round(a);return u<1&&(u=1,c.push("clamped-to-min-vol")),u>1e5&&(u=1e5,c.push("clamped-to-max-vol")),-(o-s.loudness)>t.warnAttenuationDb&&c.push("large-attenuation"),Ge(v,t.curve)&&c.push("beyond-measured-curve"),{...h,role:s.loudness===o?"anchor":"normalised",reason:null,gainDb:v,newVol:u,errorDb:j(u,t.curve)-v,change:u!==s.vol||s.volExplicit===!1,warnings:c}});return{lref:o,spreadDb:o==null?null:f-o,eligibleCount:i.length,anchorKeys:l.filter(s=>s.role==="anchor").map(s=>s.key),options:{keepOriginalVolume:t.keepOriginalVolume,warnAttenuationDb:t.warnAttenuationDb,curveVersion:t.curve.version},items:l}}var Bt={keepOriginalVolume:!1,warnAttenuationDb:15,copyUnchanged:!1,verify:!0,toneDeck:!0,toneSeconds:30,excerpts:!0};function be(e){return e.replace(/\.pptx$/i,"")+"_normalized.pptx"}var he=class{constructor({curve:n,options:t={}}={}){if(!n)throw new Error("Batch needs a volume curve");this.curve=n,this.options={...Bt,...t},this.decks=new Map,this.optOut=new Set}addDeck({name:n,size:t,file:r,handle:i=null}){return this.decks.has(n)?!1:(this.decks.set(n,{name:n,size:t,file:r,handle:i,status:"queued",error:null,inventory:null,results:new Map,progress:null,write:null}),!0)}removeDeck(n){this.decks.delete(n)}get analysing(){return[...this.decks.values()].some(n=>n.status==="queued"||n.status==="analysing")}get ready(){return this.decks.size>0&&!this.analysing}sortedDecks(){return[...this.decks.values()].sort((n,t)=>n.name<t.name?-1:n.name>t.name?1:0)}items(){let n=[];for(let t of this.sortedDecks())if(t.inventory)for(let r of t.inventory.clips){let i=Xe(r),o=t.results.get(i)??null,f=r.status;f===He.OK&&(f=o?o.status:t.status==="error"?"decode-failed":"pending");let l=o?.loudness?.integrated??null;n.push({id:n.length+1,key:i,deck:t.name,clip:r,measure:o,status:f,loudness:l,silent:o?.loudness?.silent??!1,vol:r.vol,volExplicit:r.volExplicit,optOut:this.optOut.has(i),warnings:[...new Set([...r.warnings,...o?.warnings??[],...o?.loudness?.flags??[]])]})}return n}plan(){let n=this.items(),t=Ke(n,{curve:this.curve,keepOriginalVolume:this.options.keepOriginalVolume,warnAttenuationDb:this.options.warnAttenuationDb}),r=new Map(t.items.map(i=>[i.key,i]));return{...t,rows:n.map(i=>({...i,plan:r.get(i.key)})),byKey:r}}deckPlan(n,t){return n.rows.filter(r=>r.deck===t&&r.plan).map(r=>[r.key,{change:r.plan.change,newVol:r.plan.newVol}])}decksToWrite(n){return this.sortedDecks().filter(t=>t.status!=="done"?!1:n.rows.some(i=>i.deck===t.name&&i.plan?.change)||this.options.copyUnchanged)}setOptOut(n,t){t?this.optOut.add(n):this.optOut.delete(n)}importOptOut(n){let t=[];if(Array.isArray(n?.optOut))t=n.optOut;else if(Array.isArray(n?.clips))t=n.clips.filter(o=>o.optOut||o.role==="opted-out").map(o=>o.key);else throw new Error('Not an opt-out list: expected {"optOut": [...]}');let r=0,i=new Set(this.items().map(o=>o.key));for(let o of t)typeof o=="string"&&(this.optOut.add(o),i.has(o)&&r++);return{total:t.length,matched:r}}exportOptOut(){return{app:"pptx-leveler",kind:"opt-out",createdAt:new Date().toISOString(),optOut:[...this.optOut].sort()}}};var Rt="pptx-leveler";function jt(){return new Promise((e,n)=>{let t=indexedDB.open(Rt,1);t.onupgradeneeded=()=>t.result.createObjectStore("kv"),t.onsuccess=()=>e(t.result),t.onerror=()=>n(t.error)})}async function Je(e,n){let t=await jt();try{return await new Promise((r,i)=>{let o=t.transaction("kv",e),f=n(o.objectStore("kv"));o.oncomplete=()=>r(f?.result),o.onerror=()=>i(o.error),o.onabort=()=>i(o.error)})}finally{t.close()}}var Ye=e=>Je("readonly",n=>n.get(e)).catch(()=>{}),Qe=(e,n)=>Je("readwrite",t=>t.put(n,e)).catch(()=>{});var Yn=new TextEncoder,Qn=new TextDecoder("utf-8",{ignoreBOM:!0});var cr=new TextEncoder,ur=new TextDecoder("utf-8",{ignoreBOM:!0});var qt=e=>(Math.round(e*10)/10).toFixed(1);function et(e,n){return`REFERENCE_TONE_${e}_${qt(n)}LUFS.pptx`}var E=Uint8Array,Y=Uint16Array,Wt=Int32Array,tt=new E([0,0,0,0,0,0,0,0,1,1,1,1,2,2,2,2,3,3,3,3,4,4,4,4,5,5,5,5,0,0,0,0]),nt=new E([0,0,0,0,1,1,2,2,3,3,4,4,5,5,6,6,7,7,8,8,9,9,10,10,11,11,12,12,13,13,0,0]),Gt=new E([16,17,18,0,8,7,9,6,10,5,11,4,12,3,13,2,14,1,15]),rt=function(e,n){for(var t=new Y(31),r=0;r<31;++r)t[r]=n+=1<<e[r-1];for(var i=new Wt(t[30]),r=1;r<30;++r)for(var o=t[r];o<t[r+1];++o)i[o]=o-t[r]<<5|r;return{b:t,r:i}},it=rt(tt,2),ot=it.b,Ht=it.r;ot[28]=258,Ht[258]=28;var at=rt(nt,0),Xt=at.b,pr=at.r,Me=new Y(32768);for(g=0;g<32768;++g)C=(g&43690)>>1|(g&21845)<<1,C=(C&52428)>>2|(C&13107)<<2,C=(C&61680)>>4|(C&3855)<<4,Me[g]=((C&65280)>>8|(C&255)<<8)>>1;var C,g,oe=(function(e,n,t){for(var r=e.length,i=0,o=new Y(n);i<r;++i)e[i]&&++o[e[i]-1];var f=new Y(n);for(i=1;i<n;++i)f[i]=f[i-1]+o[i-1]<<1;var l;if(t){l=new Y(1<<n);var s=15-n;for(i=0;i<r;++i)if(e[i])for(var h=i<<4|e[i],v=n-e[i],a=f[e[i]-1]++<<v,c=a|(1<<v)-1;a<=c;++a)l[Me[a]>>s]=h}else for(l=new Y(r),i=0;i<r;++i)e[i]&&(l[i]=Me[f[e[i]-1]++]>>15-e[i]);return l}),ae=new E(288);for(g=0;g<144;++g)ae[g]=8;var g;for(g=144;g<256;++g)ae[g]=9;var g;for(g=256;g<280;++g)ae[g]=7;var g;for(g=280;g<288;++g)ae[g]=8;var g,st=new E(32);for(g=0;g<32;++g)st[g]=5;var g;var Zt=oe(ae,9,1);var _t=oe(st,5,1),ke=function(e){for(var n=e[0],t=1;t<e.length;++t)e[t]>n&&(n=e[t]);return n},D=function(e,n,t){var r=n/8|0;return(e[r]|e[r+1]<<8)>>(n&7)&t},Se=function(e,n){var t=n/8|0;return(e[t]|e[t+1]<<8|e[t+2]<<16)>>(n&7)},Kt=function(e){return(e+7)/8|0},Jt=function(e,n,t){return(n==null||n<0)&&(n=0),(t==null||t>e.length)&&(t=e.length),new E(e.subarray(n,t))};var Yt=["unexpected EOF","invalid block type","invalid length/literal","invalid distance","stream finished","no stream handler",,"no callback","invalid UTF-8 data","extra field too long","date not in range 1980-2099","filename too long","stream finishing","invalid zip data"],I=function(e,n,t){var r=new Error(n||Yt[e]);if(r.code=e,Error.captureStackTrace&&Error.captureStackTrace(r,I),!t)throw r;return r},Qt=function(e,n,t,r){var i=e.length,o=r?r.length:0;if(!i||n.f&&!n.l)return t||new E(0);var f=!t,l=f||n.i!=2,s=n.i;f&&(t=new E(i*3));var h=function(Pe){var Ve=t.length;if(Pe>Ve){var Be=new E(Math.max(Ve*2,Pe));Be.set(t),t=Be}},v=n.f||0,a=n.p||0,c=n.b||0,u=n.l,y=n.d,d=n.m,m=n.n,M=i*8;do{if(!u){v=D(e,a,1);var O=D(e,a+1,3);if(a+=3,O)if(O==1)u=Zt,y=_t,d=9,m=5;else if(O==2){var V=D(e,a,31)+257,te=D(e,a+10,15)+4,ce=V+D(e,a+5,31)+1;a+=14;for(var L=new E(ce),ne=new E(19),b=0;b<te;++b)ne[Gt[b]]=D(e,a+b*3,7);a+=te*3;for(var ue=ke(ne),fe=(1<<ue)-1,pe=oe(ne,ue,1),b=0;b<ce;){var re=pe[D(e,a,fe)];a+=re&15;var A=re>>4;if(A<16)L[b++]=A;else{var B=0,K=0;for(A==16?(K=3+D(e,a,3),a+=2,B=L[b-1]):A==17?(K=3+D(e,a,7),a+=3):A==18&&(K=11+D(e,a,127),a+=7);K--;)L[b++]=B}}var T=L.subarray(0,V),R=L.subarray(V);d=ke(T),m=ke(R),u=oe(T,d,1),y=oe(R,m,1)}else I(1);else{var A=Kt(a)+4,N=e[A-4]|e[A-3]<<8,G=A+N;if(G>i){s&&I(0);break}l&&h(c+N),t.set(e.subarray(A,G),c),n.b=c+=N,n.p=a=G*8,n.f=v;continue}if(a>M){s&&I(0);break}}l&&h(c+131072);for(var Dt=(1<<d)-1,Ut=(1<<m)-1,ye=a;;ye=a){var B=u[Se(e,a)&Dt],J=B>>4;if(a+=B&15,a>M){s&&I(0);break}if(B||I(2),J<256)t[c++]=J;else if(J==256){ye=a,u=null;break}else{var Le=J-254;if(J>264){var b=J-257,ie=tt[b];Le=D(e,a,(1<<ie)-1)+ot[b],a+=ie}var xe=y[Se(e,a)&Ut],$e=xe>>4;xe||I(3),a+=xe&15;var R=Xt[$e];if($e>3){var ie=nt[$e];R+=Se(e,a)&(1<<ie)-1,a+=ie}if(a>M){s&&I(0);break}l&&h(c+131072);var Ce=c+Le;if(c<R){var Ie=o-R,Tt=Math.min(R,Ce);for(Ie+c<0&&I(3);c<Tt;++c)t[c]=r[Ie+c]}for(;c<Ce;++c)t[c]=t[c-R]}}n.l=u,n.p=ye,n.b=c,n.f=v,u&&(v=1,n.m=d,n.d=y,n.n=m)}while(!v);return c!=t.length&&f?Jt(t,0,c):t.subarray(0,c)};var en=new E(0);function lt(e,n){return Qt(e,{i:2},n&&n.out,n&&n.dictionary)}var tn=typeof TextDecoder<"u"&&new TextDecoder,nn=0;try{tn.decode(en,{stream:!0}),nn=1}catch{}var rn=101010256,on=117853008,an=101075792,sn=33639248,ln=67324752,ct=65535,se=4294967295,ut=new TextDecoder("utf-8",{ignoreBOM:!0});function le(e){return new DataView(e.buffer,e.byteOffset,e.byteLength)}function X(e,n){let t=e.getUint32(n,!0),i=e.getUint32(n+4,!0)*2**32+t;if(!Number.isSafeInteger(i))throw new Error("zip: 64-bit value exceeds safe integer range");return i}var F=class extends Error{};async function ft(e){let{size:n}=e;if(n<22)throw new F("Not a zip file (too small)");let t=Math.min(n,22+ct),r=n-t,i=await e.read(r,t),o=le(i),f=-1;for(let m=i.length-22;m>=0;m--)if(o.getUint32(m,!0)===rn){f=m;break}if(f<0)throw new F("Not a zip file (no end-of-central-directory record)");let l=o.getUint16(f+10,!0),s=o.getUint32(f+12,!0),h=o.getUint32(f+16,!0);if(l===ct||s===se||h===se){let m=f-20;if(m<0||o.getUint32(m,!0)!==on)throw new F("zip64 locator missing");let M=X(o,m+8),O=le(await e.read(M,56));if(O.getUint32(0,!0)!==an)throw new F("zip64 EOCD missing");l=X(O,32),s=X(O,40),h=X(O,48)}let v=await e.read(h,s),a=le(v),c=[],u=0;for(let m=0;m<l;m++){if(a.getUint32(u,!0)!==sn)throw new F(`Bad central directory header at entry ${m}`);let M=a.getUint16(u+8,!0),O=a.getUint16(u+10,!0),A=a.getUint32(u+16,!0),N=a.getUint32(u+20,!0),G=a.getUint32(u+24,!0),V=a.getUint16(u+28,!0),te=a.getUint16(u+30,!0),ce=a.getUint16(u+32,!0),L=a.getUint32(u+42,!0),ne=ut.decode(v.subarray(u+46,u+46+V)),b=u+46+V,ue=b+te,fe=42,pe=!1;for(;b+4<=ue;){let B=a.getUint16(b,!0),K=a.getUint16(b+2,!0);if(B===1){pe=!0;let T=b+4;G===se&&(G=X(a,T),T+=8),N===se&&(N=X(a,T),T+=8),L===se&&(L=X(a,T),fe=-(T-u),T+=8)}b+=4+K}let re=46+V+te+ce;c.push(new Ae(e,{index:m,name:ne,flags:M,method:O,crc32:A,compressedSize:N,uncompressedSize:G,localHeaderOffset:L,cdRecord:v.slice(u,u+re),nameBytes:v.slice(u+46,u+46+V),lhoField:fe,zip64:pe})),u+=re}let y=o.getUint16(f+20,!0),d=i.slice(f+22,f+22+y);return new Oe(e,c,d)}var Oe=class{constructor(n,t,r=new Uint8Array(0)){this.source=n,this.comment=r,this.entries=t,this.byName=new Map(t.map(i=>[i.name,i]))}get(n){return this.byName.get(n)??null}has(n){return this.byName.has(n)}async text(n){let t=this.get(n);return t?ut.decode(await t.bytes()):null}},Ae=class{constructor(n,t){this.source=n,Object.assign(this,t),this._dataOffset=null}get isDirectory(){return this.name.endsWith("/")}get isEncrypted(){return(this.flags&1)!==0}async dataOffset(){if(this._dataOffset==null){let n=le(await this.source.read(this.localHeaderOffset,30));if(n.getUint32(0,!0)!==ln)throw new F(`Bad local header for ${this.name}`);let t=n.getUint16(26,!0),r=n.getUint16(28,!0);this._dataOffset=this.localHeaderOffset+30+t+r}return this._dataOffset}async localSpan(){let t=await this.dataOffset()+this.compressedSize;if(this.flags&8){let i=le(await this.source.read(t,4)).getUint32(0,!0)===134695760?4:0;t+=i+4+(this.zip64?16:8)}return{start:this.localHeaderOffset,end:t}}async rawBytes(){return this.source.read(await this.dataOffset(),this.compressedSize)}async bytes(){if(this.isEncrypted)throw new F(`${this.name} is encrypted`);let n=await this.rawBytes();if(this.method===0)return n;if(this.method===8)return lt(n,{out:new Uint8Array(this.uncompressedSize)});throw new F(`${this.name}: unsupported compression method ${this.method}`)}async range(){return this.method!==0?null:{offset:await this.dataOffset(),length:this.uncompressedSize}}};function pt(e,n=e.name??""){return{size:e.size,name:n,blob:e,async read(t,r){if(t<0||t+r>e.size)throw new Error(`read out of range: ${t}+${r} > ${e.size}`);return new Uint8Array(await e.slice(t,t+r).arrayBuffer())},close:async()=>{}}}function dt({batchId:e,appVersion:n,curve:t,plan:r,rows:i,files:o={},createdAt:f=new Date().toISOString()}){let l=i.find(s=>s.plan?.role==="anchor");return{app:"pptx-leveler",appVersion:n,batchId:e,createdAt:f,lref:r.lref,spreadDb:r.spreadDb,anchor:l?{id:l.id,key:l.key}:null,options:r.options,curve:{version:t.version,type:t.type},files:o,clips:i.map(s=>{let h=s.clip,v=s.measure,a=v?.loudness,c=s.plan??{};return{id:s.id,key:s.key,file:s.deck,slide:h.slideNumber,part:h.partName,instance:h.instance,shapeId:h.shapeId,shapeName:h.shapeName,kind:h.kind,mediaPart:h.mediaPart,trimStart_ms:h.trim.startMs,trimEnd_ms:h.trim.endMs,window_s:a?.durationS??null,channels:a?.inputChannels??v?.info?.channels??null,codec:v?.info?.codec??null,decoder:v?.decoder??null,LUFS:Number.isFinite(s.loudness)?s.loudness:null,peak_dBFS:Number.isFinite(a?.samplePeakDb)?a.samplePeakDb:null,oldVol:h.vol,gain_dB:c.gainDb??null,newVol:c.newVol??null,changed:!!c.change,playGain:(()=>{let u=c.change?c.newVol:h.vol;return u>0?Math.min(1,Math.pow(10,j(u,t)/20)):0})(),role:c.role??null,optOut:!!s.optOut,status:s.status,warnings:[...new Set([...s.warnings??[],...c.warnings??[]])],media:s.media??null}})}}var ht=["batchId","id","file","slide","instance","shapeId","shapeName","kind","mediaPart","trimStart_ms","trimEnd_ms","window_s","channels","codec","LUFS","peak_dBFS","oldVol","gain_dB","newVol","role","optOut","status","warnings","mediaFile","key"];function cn(e){if(e==null)return"";if(typeof e=="number")return Number.isFinite(e)?String(Math.round(e*1e3)/1e3):"";let n=String(e);return/[",\r\n]/.test(n)?`"${n.replace(/"/g,'""')}"`:n}function mt(e){let n=[ht.join(",")];for(let t of e.clips){let r={...t,batchId:e.batchId,warnings:t.warnings.join(" "),mediaFile:t.media?.path??""};n.push(ht.map(i=>cn(r[i])).join(","))}return"\uFEFF"+n.join(`\r
-`)+`\r
-`}function vt(e){return JSON.stringify(e,(n,t)=>typeof t=="number"&&!Number.isFinite(t)?null:t,2)}var k=e=>String(e??"").replace(/[&<>"']/g,n=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"})[n]),de=e=>e==null||!Number.isFinite(e)?"\u2013":e.toFixed(1).replace("-","\u2212"),Ne=e=>e==null?"\u2013":`${+(e/1e3).toFixed(1)}%`;function un(e){if(e==null||!Number.isFinite(e))return"\u2013";let n=Math.floor(e/60),t=Math.round(e-n*60);return n>=60?`${Math.floor(n/60)}:${String(n%60).padStart(2,"0")}:${String(t).padStart(2,"0")}`:`${n}:${String(t).padStart(2,"0")}`}var fn={anchor:"Anchor",normalised:"Normalised","opted-out":"Not normalised",skipped:"Skipped"};function gt(e){let n=e.clips.map(o=>{let f=o.status==="ok"&&o.LUFS!=null,l=o.media?.path?`<button type="button" class="play" data-src="${k(encodeURI(o.media.path))}" data-gain="${o.playGain.toFixed(4)}" title="Play at the level PowerPoint will use">\u25B6</button> <a href="${k(encodeURI(o.media.path))}" target="_blank">${o.media.kind==="excerpt"?`first ${o.media.seconds??5} s`:"clip"}</a>`:o.media?.error?`<span class="muted" title="${k(o.media.error)}">unavailable</span>`:"\u2013",s=[o.status!=="ok"?o.status:"",...o.warnings].filter(Boolean).join(", ");return`<tr class="${o.role==="anchor"?"anchor":""}${o.role==="normalised"||o.role==="anchor"?"":" inactive"}">
-<td class="c"><input type="checkbox" data-key="${k(o.key)}" ${o.optOut?"checked":""} ${f?"":"disabled"} aria-label="Don't normalise clip ${o.id}"></td>
-<td class="n">${o.id}</td><td>${k(o.file)}</td><td class="n">${o.slide??k(o.part)}</td><td class="n">${o.instance}</td>
-<td>${k(o.shapeName??"")} <span class="muted">${k(o.kind)}</span></td><td class="m">${l}</td>
-<td class="n">${un(o.window_s)}</td><td class="n">${de(o.LUFS)}</td><td class="n">${de(o.gain_dB)}</td>
-<td class="n">${o.changed?`${Ne(o.oldVol)} \u2192 ${Ne(o.newVol)}`:Ne(o.oldVol)}</td>
-<td>${k(fn[o.role]??"")}</td><td class="muted">${k(s)}</td></tr>`}).join(`
-`),t=e.clips.reduce((o,f)=>(o[f.role??"skipped"]=(o[f.role??"skipped"]??0)+1,o),{}),r=(e.files?.decks??[]).map(o=>`<li>${k(o.input)} \u2192 ${o.output?k(o.output):'<span class="muted">not saved</span>'}${o.outcome&&o.outcome!=="written"?` <span class="muted">(${k(o.outcome)})</span>`:""}</li>`).join(""),i=JSON.stringify({batchId:e.batchId,keys:e.clips.map(o=>o.key)}).replace(/</g,"\\u003c");return`<!doctype html>
+// config/volume-curve.json
+var volume_curve_default = {
+  version: "placeholder-1",
+  description: "PLACEHOLDER until measured: assumes PowerPoint's vol is linear amplitude, dB = 20*log10(vol/100000). Replace with measured points from the calibration helper (milestone 7) for Office 365 PowerPoint 16.0.20527.",
+  powerpoint: "unmeasured",
+  type: "amplitude"
+};
+
+// src/core/volume-curve.js
+var VOL_MAX = 1e5;
+var VOL_MIN = 1;
+function validateCurve(curve2) {
+  if (!curve2 || typeof curve2.version !== "string") throw new Error("volume curve: missing version");
+  if (curve2.type === "amplitude") return curve2;
+  if (curve2.type !== "table") throw new Error(`volume curve: unknown type ${curve2.type}`);
+  const pts = [...curve2.points].sort((a, b) => a[0] - b[0]);
+  if (pts.length < 2) throw new Error("volume curve: need at least 2 points");
+  for (let i2 = 0; i2 < pts.length; i2++) {
+    const [v, db] = pts[i2];
+    if (!(v > 0 && v <= VOL_MAX) || !Number.isFinite(db)) throw new Error(`volume curve: bad point ${pts[i2]}`);
+    if (i2 && !(v > pts[i2 - 1][0] && db > pts[i2 - 1][1])) throw new Error("volume curve: points must be strictly increasing in vol and dB");
+  }
+  if (pts[pts.length - 1][0] !== VOL_MAX || pts[pts.length - 1][1] !== 0) throw new Error("volume curve: last point must be [100000, 0]");
+  return { ...curve2, points: pts };
+}
+function interp(x2, xs, ys) {
+  let i2 = 1;
+  while (i2 < xs.length - 1 && x2 > xs[i2]) i2++;
+  const t = (x2 - xs[i2 - 1]) / (xs[i2] - xs[i2 - 1]);
+  return ys[i2 - 1] + t * (ys[i2] - ys[i2 - 1]);
+}
+function volToDb(vol, curve2) {
+  if (!(vol > 0)) return -Infinity;
+  if (curve2.type === "amplitude") return 20 * Math.log10(vol / VOL_MAX);
+  const xs = curve2.points.map((p) => Math.log10(p[0]));
+  const ys = curve2.points.map((p) => p[1]);
+  return interp(Math.log10(vol), xs, ys);
+}
+function dbToVol(db, curve2) {
+  if (db === -Infinity) return 0;
+  if (curve2.type === "amplitude") return VOL_MAX * Math.pow(10, db / 20);
+  const xs = curve2.points.map((p) => p[1]);
+  const ys = curve2.points.map((p) => Math.log10(p[0]));
+  return Math.pow(10, interp(db, xs, ys));
+}
+function beyondCurve(db, curve2) {
+  return curve2.type === "table" && db < curve2.points[0][1];
+}
+
+// src/core/xml.js
+var NS = {
+  p: "http://schemas.openxmlformats.org/presentationml/2006/main",
+  a: "http://schemas.openxmlformats.org/drawingml/2006/main",
+  r: "http://schemas.openxmlformats.org/officeDocument/2006/relationships",
+  p14: "http://schemas.microsoft.com/office/powerpoint/2010/main",
+  mc: "http://schemas.openxmlformats.org/markup-compatibility/2006",
+  rel: "http://schemas.openxmlformats.org/package/2006/relationships"
+};
+
+// src/core/pptx.js
+var P = NS.p;
+var A = NS.a;
+var R = NS.r;
+var P14 = NS.p14;
+var MC = NS.mc;
+var STATUS = {
+  OK: "ok",
+  LINKED: "skipped-linked",
+  MUTED: "skipped-muted",
+  VOL0: "skipped-vol0",
+  NO_TIMING: "no-timing-node",
+  MISSING_MEDIA: "missing-media"
+};
+function clipKey(c) {
+  const where = c.container === "slide" && c.slideNumber != null ? `slide${c.slideNumber}` : c.partName;
+  return `${c.fileName}|${where}|${c.instance}`;
+}
+
+// src/core/gain.js
+var DEFAULTS = {
+  keepOriginalVolume: false,
+  warnAttenuationDb: 15,
+  /** An opted-out clip this far from the anchor level gets a warning. */
+  optOutWarnDb: 1
+};
+function planGains(items, opts) {
+  const o = { ...DEFAULTS, ...opts };
+  if (!o.curve) throw new Error("planGains: curve required");
+  const eligible = (it) => it.status === "ok" && !it.optOut && !it.silent && Number.isFinite(it.loudness);
+  const pool = items.filter(eligible);
+  const lref = pool.length ? Math.min(...pool.map((it) => it.loudness)) : null;
+  const loudest = pool.length ? Math.max(...pool.map((it) => it.loudness)) : null;
+  const out = items.map((it) => {
+    const base = { key: it.key, oldVol: it.vol, loudness: it.loudness, newVol: null, gainDb: null, change: false, warnings: [] };
+    if (!eligible(it)) {
+      let role = "skipped";
+      let reason = it.status;
+      if (it.status === "ok" && it.optOut) {
+        role = "opted-out";
+        reason = "opted-out";
+      } else if (it.status === "ok" && (it.silent || !Number.isFinite(it.loudness))) reason = "silent";
+      const r = { ...base, role, reason };
+      if (role === "opted-out" && lref != null && Number.isFinite(it.loudness) && it.vol > 0) {
+        r.levelVsAnchorDb = it.loudness + volToDb(it.vol, o.curve) - lref;
+        if (r.levelVsAnchorDb < -o.optOutWarnDb) r.warnings.push("will-play-quiet");
+        if (r.levelVsAnchorDb > o.optOutWarnDb) r.warnings.push("will-play-loud");
+      }
+      return r;
+    }
+    let gainDb = lref - it.loudness;
+    if (o.keepOriginalVolume && it.vol > 0) gainDb += volToDb(it.vol, o.curve);
+    const raw = dbToVol(gainDb, o.curve);
+    const warnings = [];
+    let newVol = Math.round(raw);
+    if (newVol < VOL_MIN) {
+      newVol = VOL_MIN;
+      warnings.push("clamped-to-min-vol");
+    }
+    if (newVol > VOL_MAX) {
+      newVol = VOL_MAX;
+      warnings.push("clamped-to-max-vol");
+    }
+    if (-(lref - it.loudness) > o.warnAttenuationDb) warnings.push("large-attenuation");
+    if (beyondCurve(gainDb, o.curve)) warnings.push("beyond-measured-curve");
+    return {
+      ...base,
+      role: it.loudness === lref ? "anchor" : "normalised",
+      reason: null,
+      gainDb,
+      newVol,
+      // Quantisation/clamping error of the written value, in dB.
+      errorDb: volToDb(newVol, o.curve) - gainDb,
+      change: newVol !== it.vol || it.volExplicit === false,
+      warnings
+    };
+  });
+  return {
+    lref,
+    spreadDb: lref == null ? null : loudest - lref,
+    eligibleCount: pool.length,
+    anchorKeys: out.filter((r) => r.role === "anchor").map((r) => r.key),
+    options: { keepOriginalVolume: o.keepOriginalVolume, warnAttenuationDb: o.warnAttenuationDb, curveVersion: o.curve.version },
+    items: out
+  };
+}
+
+// src/ui/batch.js
+var DEFAULT_OPTIONS = {
+  keepOriginalVolume: false,
+  warnAttenuationDb: 15,
+  copyUnchanged: false,
+  verify: true,
+  toneDeck: true,
+  toneSeconds: 30,
+  excerpts: true
+};
+function outputName(fileName) {
+  return fileName.replace(/\.pptx$/i, "") + "_normalized.pptx";
+}
+var Batch = class {
+  constructor({ curve: curve2, options = {} } = {}) {
+    if (!curve2) throw new Error("Batch needs a volume curve");
+    this.curve = curve2;
+    this.options = { ...DEFAULT_OPTIONS, ...options };
+    this.decks = /* @__PURE__ */ new Map();
+    this.optOut = /* @__PURE__ */ new Set();
+  }
+  /**
+   * Add a deck. Returns false (and adds nothing) if a deck with the same file
+   * name is already in the batch: names must be unique because outputs and
+   * clip keys are derived from them.
+   */
+  addDeck({ name, size, file, handle = null }) {
+    if (this.decks.has(name)) return false;
+    this.decks.set(name, { name, size, file, handle, status: "queued", error: null, inventory: null, results: /* @__PURE__ */ new Map(), progress: null, write: null });
+    return true;
+  }
+  removeDeck(name) {
+    this.decks.delete(name);
+  }
+  get analysing() {
+    return [...this.decks.values()].some((d) => d.status === "queued" || d.status === "analysing");
+  }
+  get ready() {
+    return this.decks.size > 0 && !this.analysing;
+  }
+  /** Decks sorted by name: this order defines the numeric clip ids. */
+  sortedDecks() {
+    return [...this.decks.values()].sort((a, b) => a.name < b.name ? -1 : a.name > b.name ? 1 : 0);
+  }
+  /**
+   * One row per media clip across the batch, in id order.
+   * status: reader status, or 'pending' while unmeasured, or the measurement status.
+   */
+  items() {
+    const rows = [];
+    for (const d of this.sortedDecks()) {
+      if (!d.inventory) continue;
+      for (const c of d.inventory.clips) {
+        const key = clipKey(c);
+        const m = d.results.get(key) ?? null;
+        let status = c.status;
+        if (status === STATUS.OK) status = m ? m.status : d.status === "error" ? "decode-failed" : "pending";
+        const loudness = m?.loudness?.integrated ?? null;
+        rows.push({
+          id: rows.length + 1,
+          key,
+          deck: d.name,
+          clip: c,
+          measure: m,
+          status,
+          loudness,
+          silent: m?.loudness?.silent ?? false,
+          vol: c.vol,
+          volExplicit: c.volExplicit,
+          optOut: this.optOut.has(key),
+          warnings: [.../* @__PURE__ */ new Set([...c.warnings, ...m?.warnings ?? [], ...m?.loudness?.flags ?? []])]
+        });
+      }
+    }
+    return rows;
+  }
+  /** Gain plan for the current state. Items still pending are treated as not eligible. */
+  plan() {
+    const items = this.items();
+    const plan = planGains(items, {
+      curve: this.curve,
+      keepOriginalVolume: this.options.keepOriginalVolume,
+      warnAttenuationDb: this.options.warnAttenuationDb
+    });
+    const byKey = new Map(plan.items.map((p) => [p.key, p]));
+    return { ...plan, rows: items.map((it) => ({ ...it, plan: byKey.get(it.key) })), byKey };
+  }
+  /** Plan entries for one deck, in the form the writer worker expects. */
+  deckPlan(plan, deckName) {
+    return plan.rows.filter((r) => r.deck === deckName && r.plan).map((r) => [r.key, { change: r.plan.change, newVol: r.plan.newVol }]);
+  }
+  /** Decks that would produce an output file under the current options. */
+  decksToWrite(plan) {
+    return this.sortedDecks().filter((d) => {
+      if (d.status !== "done") return false;
+      const changes = plan.rows.some((r) => r.deck === d.name && r.plan?.change);
+      return changes || this.options.copyUnchanged;
+    });
+  }
+  setOptOut(key, on) {
+    if (on) this.optOut.add(key);
+    else this.optOut.delete(key);
+  }
+  /** Accepts { optOut: [...] } or a report with clips[].optOut / clips[].role === 'opted-out'. */
+  importOptOut(json) {
+    let keys = [];
+    if (Array.isArray(json?.optOut)) keys = json.optOut;
+    else if (Array.isArray(json?.clips)) keys = json.clips.filter((c) => c.optOut || c.role === "opted-out").map((c) => c.key);
+    else throw new Error('Not an opt-out list: expected {"optOut": [...]}');
+    let known = 0;
+    const all = new Set(this.items().map((r) => r.key));
+    for (const k of keys) {
+      if (typeof k !== "string") continue;
+      this.optOut.add(k);
+      if (all.has(k)) known++;
+    }
+    return { total: keys.length, matched: known };
+  }
+  exportOptOut() {
+    return { app: "pptx-leveler", kind: "opt-out", createdAt: (/* @__PURE__ */ new Date()).toISOString(), optOut: [...this.optOut].sort() };
+  }
+};
+
+// src/ui/idb.js
+var DB = "pptx-leveler";
+var STORE = "kv";
+function open() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(DB, 1);
+    req.onupgradeneeded = () => req.result.createObjectStore(STORE);
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+async function tx(mode, fn) {
+  const db = await open();
+  try {
+    return await new Promise((resolve, reject) => {
+      const t = db.transaction(STORE, mode);
+      const req = fn(t.objectStore(STORE));
+      t.oncomplete = () => resolve(req?.result);
+      t.onerror = () => reject(t.error);
+      t.onabort = () => reject(t.error);
+    });
+  } finally {
+    db.close();
+  }
+}
+var kvGet = (key) => tx("readonly", (s) => s.get(key)).catch(() => void 0);
+var kvSet = (key, value) => tx("readwrite", (s) => s.put(value, key)).catch(() => {
+});
+
+// src/core/patch.js
+var enc = new TextEncoder();
+var dec = new TextDecoder("utf-8", { ignoreBOM: true });
+
+// src/core/tone.js
+var enc2 = new TextEncoder();
+var dec2 = new TextDecoder("utf-8", { ignoreBOM: true });
+var fmt = (x2) => (Math.round(x2 * 10) / 10).toFixed(1);
+function toneDeckName(batchId, lref) {
+  return `REFERENCE_TONE_${batchId}_${fmt(lref)}LUFS.pptx`;
+}
+
+// node_modules/fflate/esm/browser.js
+var u8 = Uint8Array;
+var u16 = Uint16Array;
+var i32 = Int32Array;
+var fleb = new u8([
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  1,
+  1,
+  1,
+  1,
+  2,
+  2,
+  2,
+  2,
+  3,
+  3,
+  3,
+  3,
+  4,
+  4,
+  4,
+  4,
+  5,
+  5,
+  5,
+  5,
+  0,
+  /* unused */
+  0,
+  0,
+  /* impossible */
+  0
+]);
+var fdeb = new u8([
+  0,
+  0,
+  0,
+  0,
+  1,
+  1,
+  2,
+  2,
+  3,
+  3,
+  4,
+  4,
+  5,
+  5,
+  6,
+  6,
+  7,
+  7,
+  8,
+  8,
+  9,
+  9,
+  10,
+  10,
+  11,
+  11,
+  12,
+  12,
+  13,
+  13,
+  /* unused */
+  0,
+  0
+]);
+var clim = new u8([16, 17, 18, 0, 8, 7, 9, 6, 10, 5, 11, 4, 12, 3, 13, 2, 14, 1, 15]);
+var freb = function(eb, start) {
+  var b = new u16(31);
+  for (var i2 = 0; i2 < 31; ++i2) {
+    b[i2] = start += 1 << eb[i2 - 1];
+  }
+  var r = new i32(b[30]);
+  for (var i2 = 1; i2 < 30; ++i2) {
+    for (var j = b[i2]; j < b[i2 + 1]; ++j) {
+      r[j] = j - b[i2] << 5 | i2;
+    }
+  }
+  return { b, r };
+};
+var _a = freb(fleb, 2);
+var fl = _a.b;
+var revfl = _a.r;
+fl[28] = 258, revfl[258] = 28;
+var _b = freb(fdeb, 0);
+var fd = _b.b;
+var revfd = _b.r;
+var rev = new u16(32768);
+for (i = 0; i < 32768; ++i) {
+  x = (i & 43690) >> 1 | (i & 21845) << 1;
+  x = (x & 52428) >> 2 | (x & 13107) << 2;
+  x = (x & 61680) >> 4 | (x & 3855) << 4;
+  rev[i] = ((x & 65280) >> 8 | (x & 255) << 8) >> 1;
+}
+var x;
+var i;
+var hMap = (function(cd, mb2, r) {
+  var s = cd.length;
+  var i2 = 0;
+  var l = new u16(mb2);
+  for (; i2 < s; ++i2) {
+    if (cd[i2])
+      ++l[cd[i2] - 1];
+  }
+  var le = new u16(mb2);
+  for (i2 = 1; i2 < mb2; ++i2) {
+    le[i2] = le[i2 - 1] + l[i2 - 1] << 1;
+  }
+  var co;
+  if (r) {
+    co = new u16(1 << mb2);
+    var rvb = 15 - mb2;
+    for (i2 = 0; i2 < s; ++i2) {
+      if (cd[i2]) {
+        var sv = i2 << 4 | cd[i2];
+        var r_1 = mb2 - cd[i2];
+        var v = le[cd[i2] - 1]++ << r_1;
+        for (var m = v | (1 << r_1) - 1; v <= m; ++v) {
+          co[rev[v] >> rvb] = sv;
+        }
+      }
+    }
+  } else {
+    co = new u16(s);
+    for (i2 = 0; i2 < s; ++i2) {
+      if (cd[i2]) {
+        co[i2] = rev[le[cd[i2] - 1]++] >> 15 - cd[i2];
+      }
+    }
+  }
+  return co;
+});
+var flt = new u8(288);
+for (i = 0; i < 144; ++i)
+  flt[i] = 8;
+var i;
+for (i = 144; i < 256; ++i)
+  flt[i] = 9;
+var i;
+for (i = 256; i < 280; ++i)
+  flt[i] = 7;
+var i;
+for (i = 280; i < 288; ++i)
+  flt[i] = 8;
+var i;
+var fdt = new u8(32);
+for (i = 0; i < 32; ++i)
+  fdt[i] = 5;
+var i;
+var flrm = /* @__PURE__ */ hMap(flt, 9, 1);
+var fdrm = /* @__PURE__ */ hMap(fdt, 5, 1);
+var max = function(a) {
+  var m = a[0];
+  for (var i2 = 1; i2 < a.length; ++i2) {
+    if (a[i2] > m)
+      m = a[i2];
+  }
+  return m;
+};
+var bits = function(d, p, m) {
+  var o = p / 8 | 0;
+  return (d[o] | d[o + 1] << 8) >> (p & 7) & m;
+};
+var bits16 = function(d, p) {
+  var o = p / 8 | 0;
+  return (d[o] | d[o + 1] << 8 | d[o + 2] << 16) >> (p & 7);
+};
+var shft = function(p) {
+  return (p + 7) / 8 | 0;
+};
+var slc = function(v, s, e) {
+  if (s == null || s < 0)
+    s = 0;
+  if (e == null || e > v.length)
+    e = v.length;
+  return new u8(v.subarray(s, e));
+};
+var ec = [
+  "unexpected EOF",
+  "invalid block type",
+  "invalid length/literal",
+  "invalid distance",
+  "stream finished",
+  "no stream handler",
+  ,
+  // determined by compression function
+  "no callback",
+  "invalid UTF-8 data",
+  "extra field too long",
+  "date not in range 1980-2099",
+  "filename too long",
+  "stream finishing",
+  "invalid zip data"
+  // determined by unknown compression method
+];
+var err = function(ind, msg, nt) {
+  var e = new Error(msg || ec[ind]);
+  e.code = ind;
+  if (Error.captureStackTrace)
+    Error.captureStackTrace(e, err);
+  if (!nt)
+    throw e;
+  return e;
+};
+var inflt = function(dat, st, buf, dict) {
+  var sl = dat.length, dl = dict ? dict.length : 0;
+  if (!sl || st.f && !st.l)
+    return buf || new u8(0);
+  var noBuf = !buf;
+  var resize = noBuf || st.i != 2;
+  var noSt = st.i;
+  if (noBuf)
+    buf = new u8(sl * 3);
+  var cbuf = function(l2) {
+    var bl = buf.length;
+    if (l2 > bl) {
+      var nbuf = new u8(Math.max(bl * 2, l2));
+      nbuf.set(buf);
+      buf = nbuf;
+    }
+  };
+  var final = st.f || 0, pos = st.p || 0, bt = st.b || 0, lm = st.l, dm = st.d, lbt = st.m, dbt = st.n;
+  var tbts = sl * 8;
+  do {
+    if (!lm) {
+      final = bits(dat, pos, 1);
+      var type = bits(dat, pos + 1, 3);
+      pos += 3;
+      if (!type) {
+        var s = shft(pos) + 4, l = dat[s - 4] | dat[s - 3] << 8, t = s + l;
+        if (t > sl) {
+          if (noSt)
+            err(0);
+          break;
+        }
+        if (resize)
+          cbuf(bt + l);
+        buf.set(dat.subarray(s, t), bt);
+        st.b = bt += l, st.p = pos = t * 8, st.f = final;
+        continue;
+      } else if (type == 1)
+        lm = flrm, dm = fdrm, lbt = 9, dbt = 5;
+      else if (type == 2) {
+        var hLit = bits(dat, pos, 31) + 257, hcLen = bits(dat, pos + 10, 15) + 4;
+        var tl = hLit + bits(dat, pos + 5, 31) + 1;
+        pos += 14;
+        var ldt = new u8(tl);
+        var clt = new u8(19);
+        for (var i2 = 0; i2 < hcLen; ++i2) {
+          clt[clim[i2]] = bits(dat, pos + i2 * 3, 7);
+        }
+        pos += hcLen * 3;
+        var clb = max(clt), clbmsk = (1 << clb) - 1;
+        var clm = hMap(clt, clb, 1);
+        for (var i2 = 0; i2 < tl; ) {
+          var r = clm[bits(dat, pos, clbmsk)];
+          pos += r & 15;
+          var s = r >> 4;
+          if (s < 16) {
+            ldt[i2++] = s;
+          } else {
+            var c = 0, n = 0;
+            if (s == 16)
+              n = 3 + bits(dat, pos, 3), pos += 2, c = ldt[i2 - 1];
+            else if (s == 17)
+              n = 3 + bits(dat, pos, 7), pos += 3;
+            else if (s == 18)
+              n = 11 + bits(dat, pos, 127), pos += 7;
+            while (n--)
+              ldt[i2++] = c;
+          }
+        }
+        var lt = ldt.subarray(0, hLit), dt = ldt.subarray(hLit);
+        lbt = max(lt);
+        dbt = max(dt);
+        lm = hMap(lt, lbt, 1);
+        dm = hMap(dt, dbt, 1);
+      } else
+        err(1);
+      if (pos > tbts) {
+        if (noSt)
+          err(0);
+        break;
+      }
+    }
+    if (resize)
+      cbuf(bt + 131072);
+    var lms = (1 << lbt) - 1, dms = (1 << dbt) - 1;
+    var lpos = pos;
+    for (; ; lpos = pos) {
+      var c = lm[bits16(dat, pos) & lms], sym = c >> 4;
+      pos += c & 15;
+      if (pos > tbts) {
+        if (noSt)
+          err(0);
+        break;
+      }
+      if (!c)
+        err(2);
+      if (sym < 256)
+        buf[bt++] = sym;
+      else if (sym == 256) {
+        lpos = pos, lm = null;
+        break;
+      } else {
+        var add = sym - 254;
+        if (sym > 264) {
+          var i2 = sym - 257, b = fleb[i2];
+          add = bits(dat, pos, (1 << b) - 1) + fl[i2];
+          pos += b;
+        }
+        var d = dm[bits16(dat, pos) & dms], dsym = d >> 4;
+        if (!d)
+          err(3);
+        pos += d & 15;
+        var dt = fd[dsym];
+        if (dsym > 3) {
+          var b = fdeb[dsym];
+          dt += bits16(dat, pos) & (1 << b) - 1, pos += b;
+        }
+        if (pos > tbts) {
+          if (noSt)
+            err(0);
+          break;
+        }
+        if (resize)
+          cbuf(bt + 131072);
+        var end = bt + add;
+        if (bt < dt) {
+          var shift = dl - dt, dend = Math.min(dt, end);
+          if (shift + bt < 0)
+            err(3);
+          for (; bt < dend; ++bt)
+            buf[bt] = dict[shift + bt];
+        }
+        for (; bt < end; ++bt)
+          buf[bt] = buf[bt - dt];
+      }
+    }
+    st.l = lm, st.p = lpos, st.b = bt, st.f = final;
+    if (lm)
+      final = 1, st.m = lbt, st.d = dm, st.n = dbt;
+  } while (!final);
+  return bt != buf.length && noBuf ? slc(buf, 0, bt) : buf.subarray(0, bt);
+};
+var et = /* @__PURE__ */ new u8(0);
+function inflateSync(data, opts) {
+  return inflt(data, { i: 2 }, opts && opts.out, opts && opts.dictionary);
+}
+var td = typeof TextDecoder != "undefined" && /* @__PURE__ */ new TextDecoder();
+var tds = 0;
+try {
+  td.decode(et, { stream: true });
+  tds = 1;
+} catch (e) {
+}
+
+// src/core/zip.js
+var SIG_EOCD = 101010256;
+var SIG_ZIP64_LOCATOR = 117853008;
+var SIG_ZIP64_EOCD = 101075792;
+var SIG_CDH = 33639248;
+var SIG_LFH = 67324752;
+var U16_MAX = 65535;
+var U32_MAX = 4294967295;
+var utf8 = new TextDecoder("utf-8", { ignoreBOM: true });
+function view(bytes) {
+  return new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+}
+function u64(dv, off) {
+  const lo = dv.getUint32(off, true);
+  const hi = dv.getUint32(off + 4, true);
+  const n = hi * 2 ** 32 + lo;
+  if (!Number.isSafeInteger(n)) throw new Error("zip: 64-bit value exceeds safe integer range");
+  return n;
+}
+var ZipError = class extends Error {
+};
+async function openZip(source) {
+  const { size } = source;
+  if (size < 22) throw new ZipError("Not a zip file (too small)");
+  const tailLen = Math.min(size, 22 + U16_MAX);
+  const tailStart = size - tailLen;
+  const tail = await source.read(tailStart, tailLen);
+  const tdv = view(tail);
+  let eocd = -1;
+  for (let i2 = tail.length - 22; i2 >= 0; i2--) {
+    if (tdv.getUint32(i2, true) === SIG_EOCD) {
+      eocd = i2;
+      break;
+    }
+  }
+  if (eocd < 0) throw new ZipError("Not a zip file (no end-of-central-directory record)");
+  let count = tdv.getUint16(eocd + 10, true);
+  let cdSize = tdv.getUint32(eocd + 12, true);
+  let cdOffset = tdv.getUint32(eocd + 16, true);
+  if (count === U16_MAX || cdSize === U32_MAX || cdOffset === U32_MAX) {
+    const loc = eocd - 20;
+    if (loc < 0 || tdv.getUint32(loc, true) !== SIG_ZIP64_LOCATOR) {
+      throw new ZipError("zip64 locator missing");
+    }
+    const z64Off = u64(tdv, loc + 8);
+    const z64 = view(await source.read(z64Off, 56));
+    if (z64.getUint32(0, true) !== SIG_ZIP64_EOCD) throw new ZipError("zip64 EOCD missing");
+    count = u64(z64, 32);
+    cdSize = u64(z64, 40);
+    cdOffset = u64(z64, 48);
+  }
+  const cd = await source.read(cdOffset, cdSize);
+  const dv = view(cd);
+  const entries = [];
+  let p = 0;
+  for (let i2 = 0; i2 < count; i2++) {
+    if (dv.getUint32(p, true) !== SIG_CDH) throw new ZipError(`Bad central directory header at entry ${i2}`);
+    const flags = dv.getUint16(p + 8, true);
+    const method = dv.getUint16(p + 10, true);
+    const crc32 = dv.getUint32(p + 16, true);
+    let compressedSize = dv.getUint32(p + 20, true);
+    let uncompressedSize = dv.getUint32(p + 24, true);
+    const nameLen = dv.getUint16(p + 28, true);
+    const extraLen = dv.getUint16(p + 30, true);
+    const commentLen2 = dv.getUint16(p + 32, true);
+    let localHeaderOffset = dv.getUint32(p + 42, true);
+    const name = utf8.decode(cd.subarray(p + 46, p + 46 + nameLen));
+    let e = p + 46 + nameLen;
+    const eEnd = e + extraLen;
+    let lhoField = 42;
+    let zip64 = false;
+    while (e + 4 <= eEnd) {
+      const id = dv.getUint16(e, true);
+      const len = dv.getUint16(e + 2, true);
+      if (id === 1) {
+        zip64 = true;
+        let q = e + 4;
+        if (uncompressedSize === U32_MAX) {
+          uncompressedSize = u64(dv, q);
+          q += 8;
+        }
+        if (compressedSize === U32_MAX) {
+          compressedSize = u64(dv, q);
+          q += 8;
+        }
+        if (localHeaderOffset === U32_MAX) {
+          localHeaderOffset = u64(dv, q);
+          lhoField = -(q - p);
+          q += 8;
+        }
+      }
+      e += 4 + len;
+    }
+    const recLen = 46 + nameLen + extraLen + commentLen2;
+    entries.push(new ZipEntry(source, {
+      index: i2,
+      name,
+      flags,
+      method,
+      crc32,
+      compressedSize,
+      uncompressedSize,
+      localHeaderOffset,
+      // Raw central directory record, kept so the writer can copy it unchanged.
+      // lhoField > 0: 32-bit offset at that position; < 0: 64-bit offset at -lhoField.
+      cdRecord: cd.slice(p, p + recLen),
+      nameBytes: cd.slice(p + 46, p + 46 + nameLen),
+      lhoField,
+      zip64
+    }));
+    p += recLen;
+  }
+  const commentLen = tdv.getUint16(eocd + 20, true);
+  const comment = tail.slice(eocd + 22, eocd + 22 + commentLen);
+  return new Zip(source, entries, comment);
+}
+var Zip = class {
+  constructor(source, entries, comment = new Uint8Array(0)) {
+    this.source = source;
+    this.comment = comment;
+    this.entries = entries;
+    this.byName = new Map(entries.map((e) => [e.name, e]));
+  }
+  get(name) {
+    return this.byName.get(name) ?? null;
+  }
+  has(name) {
+    return this.byName.has(name);
+  }
+  /** Read and decode a (small) text entry, or null if absent. */
+  async text(name) {
+    const e = this.get(name);
+    if (!e) return null;
+    return utf8.decode(await e.bytes());
+  }
+};
+var ZipEntry = class {
+  constructor(source, info) {
+    this.source = source;
+    Object.assign(this, info);
+    this._dataOffset = null;
+  }
+  get isDirectory() {
+    return this.name.endsWith("/");
+  }
+  get isEncrypted() {
+    return (this.flags & 1) !== 0;
+  }
+  /** Absolute offset of this entry's (possibly compressed) data in the source. */
+  async dataOffset() {
+    if (this._dataOffset == null) {
+      const h = view(await this.source.read(this.localHeaderOffset, 30));
+      if (h.getUint32(0, true) !== SIG_LFH) throw new ZipError(`Bad local header for ${this.name}`);
+      const nameLen = h.getUint16(26, true);
+      const extraLen = h.getUint16(28, true);
+      this._dataOffset = this.localHeaderOffset + 30 + nameLen + extraLen;
+    }
+    return this._dataOffset;
+  }
+  /**
+   * Byte span of the whole local record: header + data + data descriptor (if any).
+   * The writer copies this span verbatim for unchanged entries.
+   */
+  async localSpan() {
+    const dataOffset = await this.dataOffset();
+    let end = dataOffset + this.compressedSize;
+    if (this.flags & 8) {
+      const peek = view(await this.source.read(end, 4));
+      const sig = peek.getUint32(0, true) === 134695760 ? 4 : 0;
+      end += sig + 4 + (this.zip64 ? 16 : 8);
+    }
+    return { start: this.localHeaderOffset, end };
+  }
+  /** Raw (still compressed if method != 0) bytes of the entry. */
+  async rawBytes() {
+    return this.source.read(await this.dataOffset(), this.compressedSize);
+  }
+  /**
+   * Uncompressed bytes. Intended for XML parts and small media.
+   * For large stored media prefer {@link range} and read slices from the source.
+   */
+  async bytes() {
+    if (this.isEncrypted) throw new ZipError(`${this.name} is encrypted`);
+    const raw = await this.rawBytes();
+    if (this.method === 0) return raw;
+    if (this.method === 8) return inflateSync(raw, { out: new Uint8Array(this.uncompressedSize) });
+    throw new ZipError(`${this.name}: unsupported compression method ${this.method}`);
+  }
+  /**
+   * For stored (uncompressed) entries: the absolute byte range in the source,
+   * so the content can be read or sliced without copying. Null if compressed.
+   */
+  async range() {
+    if (this.method !== 0) return null;
+    const offset = await this.dataOffset();
+    return { offset, length: this.uncompressedSize };
+  }
+};
+
+// src/browser/blob-source.js
+function blobSource(blob, name = blob.name ?? "") {
+  return {
+    size: blob.size,
+    name,
+    blob,
+    async read(offset, length) {
+      if (offset < 0 || offset + length > blob.size) throw new Error(`read out of range: ${offset}+${length} > ${blob.size}`);
+      return new Uint8Array(await blob.slice(offset, offset + length).arrayBuffer());
+    },
+    close: async () => {
+    }
+  };
+}
+
+// src/core/report.js
+function buildReport({ batchId, appVersion, curve: curve2, plan, rows, files = {}, createdAt = (/* @__PURE__ */ new Date()).toISOString() }) {
+  const anchor = rows.find((r) => r.plan?.role === "anchor");
+  return {
+    app: "pptx-leveler",
+    appVersion,
+    batchId,
+    createdAt,
+    lref: plan.lref,
+    spreadDb: plan.spreadDb,
+    anchor: anchor ? { id: anchor.id, key: anchor.key } : null,
+    options: plan.options,
+    curve: { version: curve2.version, type: curve2.type },
+    files,
+    clips: rows.map((r) => {
+      const c = r.clip, m = r.measure, l = m?.loudness, p = r.plan ?? {};
+      return {
+        id: r.id,
+        key: r.key,
+        file: r.deck,
+        slide: c.slideNumber,
+        part: c.partName,
+        instance: c.instance,
+        shapeId: c.shapeId,
+        shapeName: c.shapeName,
+        kind: c.kind,
+        mediaPart: c.mediaPart,
+        trimStart_ms: c.trim.startMs,
+        trimEnd_ms: c.trim.endMs,
+        window_s: l?.durationS ?? null,
+        channels: l?.inputChannels ?? m?.info?.channels ?? null,
+        codec: m?.info?.codec ?? null,
+        decoder: m?.decoder ?? null,
+        LUFS: Number.isFinite(r.loudness) ? r.loudness : null,
+        peak_dBFS: Number.isFinite(l?.samplePeakDb) ? l.samplePeakDb : null,
+        oldVol: c.vol,
+        gain_dB: p.gainDb ?? null,
+        newVol: p.newVol ?? null,
+        changed: !!p.change,
+        // Linear gain PowerPoint applies at the volume it will use (per the curve);
+        // the HTML log plays excerpts at this level for spot checks.
+        playGain: (() => {
+          const v = p.change ? p.newVol : c.vol;
+          return v > 0 ? Math.min(1, Math.pow(10, volToDb(v, curve2) / 20)) : 0;
+        })(),
+        role: p.role ?? null,
+        optOut: !!r.optOut,
+        status: r.status,
+        warnings: [.../* @__PURE__ */ new Set([...r.warnings ?? [], ...p.warnings ?? []])],
+        media: r.media ?? null
+      };
+    })
+  };
+}
+var CSV_COLUMNS = [
+  "batchId",
+  "id",
+  "file",
+  "slide",
+  "instance",
+  "shapeId",
+  "shapeName",
+  "kind",
+  "mediaPart",
+  "trimStart_ms",
+  "trimEnd_ms",
+  "window_s",
+  "channels",
+  "codec",
+  "LUFS",
+  "peak_dBFS",
+  "oldVol",
+  "gain_dB",
+  "newVol",
+  "role",
+  "optOut",
+  "status",
+  "warnings",
+  "mediaFile",
+  "key"
+];
+function csvCell(v) {
+  if (v == null) return "";
+  if (typeof v === "number") return Number.isFinite(v) ? String(Math.round(v * 1e3) / 1e3) : "";
+  const s = String(v);
+  return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+}
+function reportToCsv(report) {
+  const lines = [CSV_COLUMNS.join(",")];
+  for (const c of report.clips) {
+    const row = { ...c, batchId: report.batchId, warnings: c.warnings.join(" "), mediaFile: c.media?.path ?? "" };
+    lines.push(CSV_COLUMNS.map((k) => csvCell(row[k])).join(","));
+  }
+  return "\uFEFF" + lines.join("\r\n") + "\r\n";
+}
+function reportToJson(report) {
+  return JSON.stringify(report, (k, v) => typeof v === "number" && !Number.isFinite(v) ? null : v, 2);
+}
+var esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+var n1 = (x2) => x2 == null || !Number.isFinite(x2) ? "\u2013" : x2.toFixed(1).replace("-", "\u2212");
+var pct = (v) => v == null ? "\u2013" : `${+(v / 1e3).toFixed(1)}%`;
+function dur(s) {
+  if (s == null || !Number.isFinite(s)) return "\u2013";
+  const m = Math.floor(s / 60), r = Math.round(s - m * 60);
+  return m >= 60 ? `${Math.floor(m / 60)}:${String(m % 60).padStart(2, "0")}:${String(r).padStart(2, "0")}` : `${m}:${String(r).padStart(2, "0")}`;
+}
+var ROLE_LABEL = { anchor: "Anchor", normalised: "Normalised", "opted-out": "Not normalised", skipped: "Skipped" };
+function reportToHtml(report) {
+  const rows = report.clips.map((c) => {
+    const canOptOut = c.status === "ok" && c.LUFS != null;
+    const media = c.media?.path ? `<button type="button" class="play" data-src="${esc(encodeURI(c.media.path))}" data-gain="${c.playGain.toFixed(4)}" title="Play at the level PowerPoint will use">\u25B6</button> <a href="${esc(encodeURI(c.media.path))}" target="_blank">${c.media.kind === "excerpt" ? `first ${c.media.seconds ?? 5} s` : "clip"}</a>` : c.media?.error ? `<span class="muted" title="${esc(c.media.error)}">unavailable</span>` : "\u2013";
+    const notes2 = [c.status !== "ok" ? c.status : "", ...c.warnings].filter(Boolean).join(", ");
+    return `<tr class="${c.role === "anchor" ? "anchor" : ""}${c.role === "normalised" || c.role === "anchor" ? "" : " inactive"}">
+<td class="c"><input type="checkbox" data-key="${esc(c.key)}" ${c.optOut ? "checked" : ""} ${canOptOut ? "" : "disabled"} aria-label="Don't normalise clip ${c.id}"></td>
+<td class="n">${c.id}</td><td>${esc(c.file)}</td><td class="n">${c.slide ?? esc(c.part)}</td><td class="n">${c.instance}</td>
+<td>${esc(c.shapeName ?? "")} <span class="muted">${esc(c.kind)}</span></td><td class="m">${media}</td>
+<td class="n">${dur(c.window_s)}</td><td class="n">${n1(c.LUFS)}</td><td class="n">${n1(c.gain_dB)}</td>
+<td class="n">${c.changed ? `${pct(c.oldVol)} \u2192 ${pct(c.newVol)}` : pct(c.oldVol)}</td>
+<td>${esc(ROLE_LABEL[c.role] ?? "")}</td><td class="muted">${esc(notes2)}</td></tr>`;
+  }).join("\n");
+  const counts = report.clips.reduce((a, c) => (a[c.role ?? "skipped"] = (a[c.role ?? "skipped"] ?? 0) + 1, a), {});
+  const decks = (report.files?.decks ?? []).map((d) => `<li>${esc(d.input)} \u2192 ${d.output ? esc(d.output) : '<span class="muted">not saved</span>'}${d.outcome && d.outcome !== "written" ? ` <span class="muted">(${esc(d.outcome)})</span>` : ""}</li>`).join("");
+  const data = JSON.stringify({ batchId: report.batchId, keys: report.clips.map((c) => c.key) }).replace(/</g, "\\u003c");
+  return `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Batch ${k(e.batchId)} \xB7 Volume Fix</title>
+<title>Batch ${esc(report.batchId)} \xB7 Volume Fix</title>
 <style>
 :root{--bg:#fff;--fg:#1c1c1e;--muted:#67676e;--line:#e2e2de;--accent:#1f5fbf;--anchor:#f0eafb;color-scheme:light}
 @media (prefers-color-scheme:dark){:root{--bg:#17171a;--fg:#ececee;--muted:#9c9ca5;--line:#2e2e33;--accent:#6ea3ff;--anchor:#2a2140;color-scheme:dark}}
@@ -23,23 +1027,23 @@ button{font:inherit;padding:6px 14px;border-radius:6px;border:1px solid var(--ac
 button.play{width:26px;height:22px;padding:0;font-size:10px;border-radius:11px;background:transparent;color:var(--accent)}button.play.on{background:var(--accent);color:#fff}
 .bar{display:flex;flex-wrap:wrap;align-items:center;gap:8px 16px;margin:12px 0}
 </style></head><body>
-<h1>Batch ${k(e.batchId)}</h1>
-<div class="muted">Volume Fix ${k(e.appVersion)} \xB7 ${k(new Date(e.createdAt).toLocaleString())} \xB7 volume curve ${k(e.curve.version)}</div>
+<h1>Batch ${esc(report.batchId)}</h1>
+<div class="muted">Volume Fix ${esc(report.appVersion)} \xB7 ${esc(new Date(report.createdAt).toLocaleString())} \xB7 volume curve ${esc(report.curve.version)}</div>
 <div class="meta">
-<span>Reference level <b>${de(e.lref)} LUFS</b>${e.anchor?` (anchor #${e.anchor.id})`:""}</span>
-<span>Spread <b>${de(e.spreadDb)} dB</b></span>
-<span>Clips <b>${e.clips.length}</b>: ${t.normalised??0} normalised, ${t.anchor??0} anchor, ${t["opted-out"]??0} not normalised, ${t.skipped??0} skipped</span>
-${e.files?.toneDeck?`<span>Tone deck <b>${k(e.files.toneDeck)}</b></span>`:""}
+<span>Reference level <b>${n1(report.lref)} LUFS</b>${report.anchor ? ` (anchor #${report.anchor.id})` : ""}</span>
+<span>Spread <b>${n1(report.spreadDb)} dB</b></span>
+<span>Clips <b>${report.clips.length}</b>: ${counts.normalised ?? 0} normalised, ${counts.anchor ?? 0} anchor, ${counts["opted-out"] ?? 0} not normalised, ${counts.skipped ?? 0} skipped</span>
+${report.files?.toneDeck ? `<span>Tone deck <b>${esc(report.files.toneDeck)}</b></span>` : ""}
 </div>
-${r?`<details><summary>Files</summary><ul>${r}</ul></details>`:""}
+${decks ? `<details><summary>Files</summary><ul>${decks}</ul></details>` : ""}
 <div class="bar"><button type="button" id="export">Export opt-out list</button>
 <span class="muted">Tick clips that should not be normalised, export the list, and load it in Volume Fix at https://volume-fix.com/ (Options \u2192 Load opt-out list) to re-run this batch.</span></div>
 <div class="wrap"><table>
 <thead><tr><th>Skip</th><th>#</th><th>Presentation</th><th>Slide</th><th>Pos</th><th>Clip</th><th>Media</th><th>Length</th><th>LUFS</th><th>Change dB</th><th>Volume</th><th>Result</th><th>Notes</th></tr></thead>
 <tbody>
-${n}
+${rows}
 </tbody></table></div>
-<script type="application/json" id="batch-data">${i}<\/script>
+<script type="application/json" id="batch-data">${data}<\/script>
 <script>
 document.getElementById('export').onclick = function () {
   var d = JSON.parse(document.getElementById('batch-data').textContent);
@@ -64,4 +1068,700 @@ document.addEventListener('click', function (e) {
 });
 <\/script>
 </body></html>
-`}function pn(e,n=40){return String(e??"").normalize("NFKD").replace(/[^\w\- ]+/g,"").trim().replace(/\s+/g,"-").slice(0,n)||"clip"}function wt(e,n){return`${String(e.id).padStart(3,"0")}_s${e.clip.slideNumber??"x"}_${pn(e.clip.shapeName)}${n}`}function yt(e){return{json:`report_${e}.json`,csv:`report_${e}.csv`,log:`log_${e}.html`,mediaDir:`media_${e}`}}function xt(e=new Date){let n=t=>String(t).padStart(2,"0");return`${e.getFullYear()}${n(e.getMonth()+1)}${n(e.getDate())}-${n(e.getHours())}${n(e.getMinutes())}${n(e.getSeconds())}`}var kt="0.1.0",p=e=>document.getElementById(e),S=e=>String(e??"").replace(/[&<>"']/g,n=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"})[n]),St=new URL("vendor/",document.baseURI).href,we=je(Re),w=new he({curve:we,options:hn()}),x=null,P=!1,q=!1;function hn(){try{return JSON.parse(localStorage.getItem("pptx-leveler:options")??"{}")}catch{return{}}}function dn(){try{localStorage.setItem("pptx-leveler:options",JSON.stringify(w.options))}catch{}}var Mt=new Worker(new URL("worker.js",document.baseURI),{type:"module"}),me=new Map;Mt.onmessage=e=>{let n=e.data,t=me.get(n.id);if(t){if(n.type==="error"){me.delete(n.id),t.reject(new Error(n.message));return}t.on?.(n),(n.type==="done"||n.type==="written"||n.type==="excerpted"||n.type==="toned")&&(me.delete(n.id),t.resolve(n))}};function ve(e,n){let t=Math.random().toString(36).slice(2);return new Promise((r,i)=>{me.set(t,{resolve:r,reject:i,on:n}),Mt.postMessage({...e,id:t})})}var Ee=!1;function $(){Ee||(Ee=!0,requestAnimationFrame(()=>{Ee=!1,gn(),yn(),xn()}))}var mn=e=>e>=1e9?`${(e/1e9).toFixed(2)} GB`:`${(e/1e6).toFixed(e<1e7?1:0)} MB`,Q=(e,n=1)=>e==null||!Number.isFinite(e)?"\u2013":e.toFixed(n).replace("-","\u2212"),De=e=>e==null?"\u2013":`${+(e/1e3).toFixed(e%1e3?1:0)}%`;function vn(e){if(e==null||!Number.isFinite(e))return"\u2013";let n=Math.floor(e/60),t=Math.round(e-n*60);return n>=60?`${Math.floor(n/60)}:${String(n%60).padStart(2,"0")}:${String(t).padStart(2,"0")}`:`${n}:${String(t).padStart(2,"0")}`}function gn(){let e=p("decks");e.innerHTML=w.sortedDecks().map(n=>{let t=mn(n.size),r=0;if(n.status==="queued")t+=" \xB7 waiting";else if(n.status==="analysing"){let i=n.inventory?.clips.filter(f=>f.status==="ok").length??0,o=n.results.size;r=i?(o+(n.progress??0))/i:0,t+=n.inventory?` \xB7 measuring ${Math.min(o+1,i)} of ${i}`:" \xB7 reading"}else if(n.status==="done"){let i=n.inventory.clips.length;t+=` \xB7 ${i===0?"no media":`${i} clip${i===1?"":"s"}`}`,r=1}else n.status==="error"&&(t+=` \xB7 ${n.error}`);return`<li class="deck ${n.status}"><span class="name">${S(n.name)}</span><span class="meta">${S(t)}</span><button type="button" class="icon" data-remove="${S(n.name)}" ${n.status==="analysing"||q?"disabled":""} aria-label="Remove ${S(n.name)}">Remove</button>${n.status==="analysing"||n.status==="queued"?`<div class="bar"><span style="width:${(r*100).toFixed(1)}%"></span></div>`:""}</li>`}).join("")}var $t={"skipped-muted":["Muted","info"],"skipped-vol0":["Volume 0","info"],"skipped-linked":["Linked file, not embedded","warn"],"no-timing-node":["No playback settings","warn"],"missing-media":["Media file missing","bad"],"no-audio-track":["No audio","info"],"decode-failed":["Couldn't decode","bad"],"trim-empty":["Trimmed to nothing","warn"],pending:["Measuring\u2026","info"]};function wn(e,n){let t=[],r=e.plan;if(r?.role==="anchor"&&t.push(["Anchor \xB7 quietest clip","anchor"]),e.status!=="ok"&&$t[e.status]){let[o,f]=$t[e.status];t.push([o,f,e.measure?.error])}else e.status==="ok"&&e.silent&&t.push(["Silent","info"]);r?.role==="opted-out"&&(t.push(["Not normalised","info"]),r.levelVsAnchorDb!=null&&Math.abs(r.levelVsAnchorDb)>1&&t.push([`Plays ${Q(Math.abs(r.levelVsAnchorDb))} dB ${r.levelVsAnchorDb<0?"quieter":"louder"}`,"warn"]));let i=new Set([...e.warnings??[],...r?.warnings??[]]);return i.has("large-attenuation")&&t.push([`Cut by more than ${n} dB`,"warn"]),i.has("clamped-to-min-vol")&&t.push(["At minimum volume","bad"]),i.has("vol-absent")&&t.push(["No volume set (assumed 50%)","warn"]),i.has("multiple-timing-nodes")&&t.push(["Several playback settings","warn"]),i.has("short")&&t.push(["Under 0.4 s","info"]),i.has("hidden-slide")&&t.push(["Hidden slide","info"]),i.has("on-layout")&&t.push(["On a layout","info"]),i.has("on-master")&&t.push(["On a master","info"]),i.has("fade-applied")&&t.push(["Fades included","info"]),t.map(([o,f,l])=>`<span class="badge ${f}"${l?` title="${S(l)}"`:""}>${S(o)}</span>`).join("")}function yn(){let e=w.plan(),n=e.rows;p("empty").hidden=n.length>0||w.decks.size>0,w.decks.size>0&&n.length===0?(p("empty").hidden=!1,p("empty").textContent=w.analysing?"Reading presentations\u2026":"None of these presentations contain audio or video."):p("empty").textContent="Add presentations to see their clips here.";let t={norm:0,skipped:0,optout:0,warn:0};for(let l of n)l.plan?.role==="normalised"||l.plan?.role==="anchor"?t.norm++:l.plan?.role==="opted-out"?t.optout++:t.skipped++,((l.plan?.warnings??[]).length||l.status==="decode-failed")&&t.warn++;let r=n.find(l=>l.plan?.role==="anchor"),i=w.sortedDecks().filter(l=>l.status==="queued"||l.status==="analysing").length,o=[];i&&o.push(["Status","Measuring",`${i} presentation${i===1?"":"s"} left`]),o.push(["Reference level",e.lref==null?"\u2013":`${Q(e.lref)} LUFS`,r?`Anchor: #${r.id}, ${r.deck}, slide ${r.clip.slideNumber??"\u2013"}`:"The quietest clip plays at 100%"]),o.push(["Spread",e.spreadDb==null?"\u2013":`${Q(e.spreadDb)} dB`,"Loudest minus quietest"]),o.push(["Clips",String(n.length),`${t.norm} normalised \xB7 ${t.skipped} skipped \xB7 ${t.optout} not normalised`]),o.push(["Need attention",String(t.warn),t.warn?"See Notes":"Nothing flagged"]),p("summary").innerHTML=n.length||i?o.map(([l,s,h])=>{let v=l==="Reference level"&&e.lref!=null?` <button type="button" class="play${W?" on":""}" id="tone-btn" title="Play a 1 kHz reference tone at this level in the browser. It should sound as loud as the clips. A rough guide only; use the tone deck in PowerPoint to align the console." aria-label="${W?"Stop":"Play"} reference tone">${W?"\u25A0":"\u25B6"}</button>`:"";return`<div class="metric"><div class="k">${S(l)}</div><div class="v">${S(s)}${v}</div><div class="s">${S(h)}</div></div>`}).join(""):"";let f=w.options.warnAttenuationDb;p("clips").querySelector("tbody").innerHTML=n.map(l=>{let s=l.plan,h=s?.role==="normalised"||s?.role==="anchor",v=l.status==="ok"&&!l.silent,a=l.clip,c=a.trim.startMs||a.trim.endMs,u=s?.newVol!=null&&s.change?`${De(l.vol)} <span class="arrow">\u2192</span> ${De(s.newVol)}`:De(l.vol);return`<tr class="${h?"":"inactive"} ${s?.role==="anchor"?"anchor":""}"><td class="c-skip"><input type="checkbox" data-key="${S(l.key)}" ${l.optOut?"checked":""} ${v&&!q?"":"disabled"} aria-label="Don't normalise clip ${l.id}"></td><td class="c-id">${l.id}</td><td class="c-play">${l.status==="ok"&&!l.silent?`<button type="button" class="play${U?.key===l.key?" on":""}" data-play="${S(l.key)}" title="Play at the ${h?"normalised":"current"} level (Alt-click: original level)" aria-label="${U?.key===l.key?"Stop":"Play"} clip ${l.id}">${U?.key===l.key?"\u25A0":"\u25B6"}</button>`:""}</td><td class="deck-name">${S(l.deck)}</td><td class="c-n">${a.slideNumber??S(a.container)}${a.instance>1?`<span class="muted"> \xB7${a.instance}</span>`:""}</td><td class="clip-name">${S(a.shapeName??"")} <span class="muted small">${a.kind}</span></td><td class="c-n">${vn(l.measure?.loudness?.durationS)}${c?' <span class="muted small">trimmed</span>':""}</td><td class="c-n">${l.loudness!=null&&Number.isFinite(l.loudness)?`${Q(l.loudness)}`:l.silent?"silent":"\u2013"}</td><td class="c-n">${s?.gainDb!=null?`${Q(s.gainDb)} dB`:"\u2013"}</td><td class="c-n">${u}</td><td>${wn(l,f)}</td></tr>`}).join("")}function xn(){let e=w.plan(),n=w.decksToWrite(e),t=p("write");if(t.disabled=q||!w.ready||!x||e.rows.length===0,t.textContent=n.length?`Save ${n.length} presentation${n.length===1?"":"s"} and batch log`:"Save batch log",!q){let r="";w.decks.size?w.analysing?r="Waiting for measurements to finish.":x?e.rows.length?n.length||(r="No presentation needs changing; the batch log can still be saved."):r="No clips to report on.":r="Choose an output folder first.":r="Add presentations first.",p("write-status").textContent=r}p("out-status").textContent=x?`${x.name}${P?"":" (click to reconnect)"}`:"No folder chosen.",p("pick-out").textContent=x&&!P?"Reconnect folder":x?"Change folder\u2026":"Choose folder\u2026"}var ze=e=>/\.pptx$/i.test(e)&&!e.startsWith("~$");async function ge(e){let n=[];for(let{file:t,handle:r}of e){if(!ze(t.name)){n.push(`${t.name} (not a .pptx)`);continue}w.addDeck({name:t.name,size:t.size,file:t,handle:r})||n.push(`${t.name} (already added)`)}n.length&&ee(`Skipped: ${n.join(", ")}`),$(),bn()}async function Ot(e,n){if(e.kind==="file")ze(e.name)&&n.push({file:await e.getFile(),handle:e});else if(e.kind==="directory")for await(let t of e.values())t.kind==="file"&&ze(t.name)&&n.push({file:await t.getFile(),handle:t})}function $n(){let e=p("drop"),n=t=>e.classList.toggle("over",t);for(let t of[e,document.body])t.addEventListener("dragover",r=>{r.preventDefault(),n(!0)}),t.addEventListener("dragleave",r=>{(r.target===e||r.target===document.body)&&n(!1)});document.body.addEventListener("drop",async t=>{t.preventDefault(),n(!1);let i=[...t.dataTransfer?.items??[]].filter(l=>l.kind==="file").map(l=>l.getAsFileSystemHandle?.()??null),o=[...t.dataTransfer?.files??[]],f=[];if(i.length&&i.every(Boolean))for(let l of i){let s=await l;s&&await Ot(s,f)}else for(let l of o)f.push({file:l});ge(f)}),e.addEventListener("keydown",t=>{(t.key==="Enter"||t.key===" ")&&(t.preventDefault(),Ue())}),e.addEventListener("click",t=>{(t.target===e||t.target.tagName==="P"||t.target.tagName==="STRONG")&&Ue()}),p("add").onclick=t=>{t.stopPropagation(),Ue()},p("file-input").onchange=t=>{ge([...t.target.files].map(r=>({file:r}))),t.target.value=""}}async function Ue(){if(window.showOpenFilePicker)try{let e=await showOpenFilePicker({multiple:!0,id:"pptx-leveler-in",types:[{description:"PowerPoint",accept:{"application/vnd.openxmlformats-officedocument.presentationml.presentation":[".pptx"]}}]}),n=[];for(let t of e)await Ot(t,n);ge(n)}catch(e){e.name!=="AbortError"&&ee(e.message)}else p("file-input").click()}var Te=!1;async function bn(){if(!Te){Te=!0;try{for(;;){let e=w.sortedDecks().find(n=>n.status==="queued");if(!e)break;e.status="analysing",$();try{await ve({type:"analyze",file:e.file,fileName:e.name,ffmpegBase:St},n=>{w.decks.has(e.name)&&(n.type==="deck"?e.inventory=n.deck:n.type==="progress"?e.progress=n.fraction:n.type==="clip"&&(e.results.set(n.key,n.result),e.progress=0),$())}),e.status="done"}catch(n){e.status="error",e.error=n.message}$()}}finally{Te=!1}}}async function kn(){let e=await Ye("outDir");e&&(x=e,P=await e.queryPermission?.({mode:"readwrite"})==="granted",$())}async function At(){return x?await x.queryPermission({mode:"readwrite"})==="granted"?P=!0:(P=await x.requestPermission({mode:"readwrite"})==="granted",$(),P):!1}async function Sn(){if(x&&!P){await At();return}try{let e=await showDirectoryPicker({id:"pptx-leveler-out",mode:"readwrite"});x=e,P=!0,await Qe("outDir",e),$()}catch(e){e.name!=="AbortError"&&ee(e.message)}}async function Mn(e,n){try{return await e.getFileHandle(n)}catch{return null}}function On(e,n,t="OK"){let r=p("dlg");return p("dlg-title").textContent=e,p("dlg-body").innerHTML=n,p("dlg-ok").textContent=t,r.returnValue="",r.showModal(),new Promise(i=>r.addEventListener("close",()=>i(r.returnValue==="ok"),{once:!0}))}async function Nt(){if(q||!await At())return;let e=w.plan(),n=w.decksToWrite(e);if(!e.rows.length)return;let t=[];for(let a of n){let c=be(a.name),u=await Mn(x,c);if(u){if(a.handle&&await a.handle.isSameEntry(u)){ee(`${a.name} is itself named like an output file; rename it first.`);return}t.push(c)}}if(t.length&&!await On(`Replace ${t.length} existing file${t.length===1?"":"s"}?`,`<p>These already exist in <strong>${S(x.name)}</strong>:</p><ul>${t.map(a=>`<li>${S(a)}</li>`).join("")}</ul>`,"Replace"))return;q=!0;let r=p("written");r.innerHTML="",$();let i=w.options,o=xt(),f=yt(o),l={decks:[],...f,toneDeck:null},s=(a,c="")=>{let u=document.createElement("li");return u.className=c,u.textContent=a,r.appendChild(u),u},h=0;for(let[a,c]of n.entries()){let u=be(c.name);p("write-status").textContent=`Saving ${a+1} of ${n.length}: ${u}`;let y=s(`${u} \u2026`);try{let d=await ve({type:"write",file:c.file,fileName:c.name,outDir:x,outName:u,plan:w.deckPlan(e,c.name),verify:i.verify,copyUnchanged:i.copyUnchanged,overwrite:!0},m=>{m.type==="write-progress"&&(y.textContent=`${u} \u2026 ${Math.round(m.fraction*100)}%`)});c.write=d,l.decks.push({input:c.name,output:d.outcome==="written"?u:null,outcome:d.outcome,changes:d.changes.length}),d.outcome==="written"?(y.className="ok",y.textContent=`\u2713 ${u} \xB7 ${d.changes.length} clip${d.changes.length===1?"":"s"} adjusted${d.verified?" \xB7 checked":""}`):(y.className="skip",y.textContent=`\u2013 ${u} \xB7 ${d.outcome==="exists"?"already exists, not replaced":"no change needed"}`)}catch(d){h++,l.decks.push({input:c.name,output:null,outcome:"failed",error:d.message}),y.className="bad",y.textContent=`\u2717 ${u} \xB7 ${d.message}`}}if(i.toneDeck&&e.lref!=null){let a=et(o,e.lref);p("write-status").textContent=`Saving ${a}`;let c=s(`${a} \u2026`);try{let u=await ve({type:"tone",templateUrl:new URL("assets/reference_template.pptx",document.baseURI).href,outDir:x,outName:a,lref:e.lref,batchId:o,date:new Date().toLocaleDateString(),deckCount:l.decks.filter(d=>d.output).length,clipCount:e.rows.filter(d=>d.plan?.role==="normalised"||d.plan?.role==="anchor").length,seconds:i.toneSeconds}),y=u.measured.every(d=>Math.abs(d.lufs-e.lref)<=.1&&d.vol===1e5);l.toneDeck=a,c.className=y?"ok":"bad",c.textContent=`${y?"\u2713":"\u2717"} ${a} \xB7 tones measure ${u.measured.map(d=>`${Q(d.lufs)} (${d.channels===1?"mono":"stereo"})`).join(", ")} LUFS`,y||h++}catch(u){h++,c.className="bad",c.textContent=`\u2717 ${a} \xB7 ${u.message}`}}let v=e.rows.map(a=>({...a}));if(i.excerpts){let a=v.filter(c=>c.clip.mediaPart&&!["skipped-linked","missing-media"].includes(c.clip.status));if(a.length){let c=s(`${f.mediaDir}/ \u2026`),u=await x.getDirectoryHandle(f.mediaDir,{create:!0}),y=new Map,d=0,m=0;for(let M of a){d++,p("write-status").textContent=`Saving media ${d} of ${a.length}`;let O=`${M.deck}|${M.clip.mediaPart}|${M.clip.trim.startMs}`;if(!y.has(O)){let A=w.decks.get(M.deck);try{let N=await ve({type:"excerpt",file:A.file,fileName:A.name,mediaPart:M.clip.mediaPart,startMs:M.clip.trim.startMs,mediaDir:u,baseName:wt(M,"").replace(/\.$/,""),maxFullBytes:1048576,seconds:5,ffmpegBase:St});y.set(O,{path:`${f.mediaDir}/${N.name}`,kind:N.kind,seconds:N.seconds})}catch(N){m++,y.set(O,{error:N.message})}}M.media=y.get(O)}c.className=m?"bad":"ok",c.textContent=`${m?"\u2717":"\u2713"} ${f.mediaDir}/ \xB7 ${y.size-m} media file${y.size-m===1?"":"s"}${m?`, ${m} failed`:""}`}}try{let a=dt({batchId:o,appVersion:kt,curve:we,plan:e,rows:v,files:l});await Fe(f.json,vt(a),"application/json"),await Fe(f.csv,mt(a),"text/csv"),await Fe(f.log,gt(a),"text/html"),s(`\u2713 ${f.log}, ${f.csv}, ${f.json}`,"ok")}catch(a){h++,s(`\u2717 reports \xB7 ${a.message}`,"bad")}q=!1,p("write-status").textContent=h?`Finished with ${h} problem${h===1?"":"s"}; see the list below.`:`Saved batch ${o} to ${x.name}. Open ${f.log} there to review it.`,$()}async function Fe(e,n,t){let i=await(await x.getFileHandle(e,{create:!0})).createWritable();await i.write(new Blob([n],{type:t})),await i.close()}var z=new Audio;z.preload="none";var U=null,An={".mp4":"video/mp4",".m4v":"video/mp4",".mov":"video/mp4",".m4a":"audio/mp4",".mp3":"audio/mpeg",".wav":"audio/wav"},Z=null,W=null;function Et(){if(!W)return;let{osc:e,gain:n}=W,t=Z.currentTime;n.gain.setValueAtTime(n.gain.value,t),n.gain.linearRampToValueAtTime(0,t+.01),e.stop(t+.02),W=null,$()}function Nn(){if(W){Et();return}let e=w.plan().lref;if(e==null)return;_(),Z??=new AudioContext,Z.resume();let n=new OscillatorNode(Z,{type:"sine",frequency:1e3}),t=new GainNode(Z,{gain:0});n.connect(t).connect(Z.destination);let r=Z.currentTime;t.gain.setValueAtTime(0,r),t.gain.linearRampToValueAtTime(Math.pow(10,e/20),r+.01),n.start(r),W={osc:n,gain:t},$()}function _(){z.pause(),U?.url&&URL.revokeObjectURL(U.url),U=null,$()}z.addEventListener("timeupdate",()=>{U?.endS!=null&&z.currentTime>=U.endS&&_()});z.addEventListener("ended",_);z.addEventListener("error",()=>{let e=U?.key;_(),e&&ee("This browser can't play that clip's format; it is still measured and normalised.")});async function En(e,n=!1){if(U?.key===e){_();return}_(),Et();let t=w.plan().rows.find(c=>c.key===e),r=t&&w.decks.get(t.deck);if(!t||!r?.file)return;r.zip??=await ft(pt(r.file,r.name));let i=r.zip.get(t.clip.mediaPart);if(!i)return;let o=await i.range(),f=(t.clip.mediaPart.match(/\.[^./]+$/)?.[0]??"").toLowerCase(),l=o?r.file.slice(o.offset,o.offset+o.length):await i.bytes(),s=URL.createObjectURL(new Blob([l],{type:An[f]??""})),h=n||!t.plan?.change?t.vol:t.plan.newVol,v=t.clip.trim.startMs/1e3,a=t.measure?.loudness?.durationS;U={key:e,url:s,endS:a!=null?v+a:null},z.src=s,z.volume=Math.max(0,Math.min(1,Math.pow(10,j(h??0,we)/20))),z.currentTime=v,$();try{await z.play()}catch(c){c.name!=="AbortError"&&(_(),ee(`Can't play this clip: ${c.message}`))}}function Dn(){let e=w.options,n=(t,r,i)=>{let o=p(t);o.type==="checkbox"?o.checked=!!e[r]:o.value=e[r],o.addEventListener("change",()=>{e[r]=i(o),dn(),$()})};n("opt-keep","keepOriginalVolume",t=>t.checked),n("opt-warn","warnAttenuationDb",t=>Math.max(1,Math.min(60,Number(t.value)||15))),n("opt-copy","copyUnchanged",t=>t.checked),n("opt-verify","verify",t=>t.checked),n("opt-tone","toneDeck",t=>t.checked),n("opt-tone-s","toneSeconds",t=>Math.max(5,Math.min(600,Number(t.value)||30))),n("opt-excerpts","excerpts",t=>t.checked),p("optout-load").onclick=()=>p("optout-input").click(),p("optout-input").onchange=async t=>{let r=t.target.files[0];if(t.target.value="",!!r)try{let i=w.importOptOut(JSON.parse(await r.text()));p("optout-status").textContent=`Loaded ${i.total} clip${i.total===1?"":"s"}; ${i.matched} match this batch.`,$()}catch(i){p("optout-status").textContent=i.message}},p("optout-save").onclick=()=>{let t=new Blob([JSON.stringify(w.exportOptOut(),null,2)],{type:"application/json"}),r=Object.assign(document.createElement("a"),{href:URL.createObjectURL(t),download:"optout.json"});r.click(),setTimeout(()=>URL.revokeObjectURL(r.href),1e3)},p("summary").addEventListener("click",t=>{t.target.closest?.("#tone-btn")&&Nn()}),p("clips").addEventListener("click",t=>{let r=t.target.closest?.("button[data-play]");r&&En(r.dataset.play,t.altKey)}),p("clips").addEventListener("change",t=>{let r=t.target.dataset?.key;r&&(w.setOptOut(r,t.target.checked),$())}),p("decks").addEventListener("click",t=>{let r=t.target.dataset?.remove;r&&(w.removeDeck(r),$())})}var bt;function ee(e){let n=p("write-status");n.textContent=e,clearTimeout(bt),bt=setTimeout(()=>$(),6e3)}function Un(){let e=[],n="showDirectoryPicker"in window;if(e.push([`ffmpeg ${self.crossOriginIsolated?"multithreaded":"single-threaded"}`,self.crossOriginIsolated?"ok":"warn"]),e.push([`WebCodecs ${"AudioDecoder"in window?"on":"off"}`,"AudioDecoder"in window?"ok":"warn"]),p("env").innerHTML=e.map(([t,r])=>`<span class="chip ${r}">${S(t)}</span>`).join(""),!n||!("Worker"in window)){let t=p("unsupported");t.hidden=!1,t.textContent="This browser can't save files to a folder. Use Chrome or Edge on Windows or macOS."}p("version").textContent=`Volume Fix ${kt}`,p("curve").textContent=we.version}Un();$n();Dn();p("pick-out").onclick=Sn;p("write").onclick=Nt;kn();$();window.__pptxLeveler={batch:w,addFiles:ge,setOutDir:async e=>{x=e,P=!0,$()},writeAll:Nt,idle:()=>!w.analysing&&!q};
+`;
+}
+function slug(s, max2 = 40) {
+  return String(s ?? "").normalize("NFKD").replace(/[^\w\- ]+/g, "").trim().replace(/\s+/g, "-").slice(0, max2) || "clip";
+}
+function mediaFileName(row, ext) {
+  return `${String(row.id).padStart(3, "0")}_s${row.clip.slideNumber ?? "x"}_${slug(row.clip.shapeName)}${ext}`;
+}
+function batchFileNames(batchId) {
+  return { json: `report_${batchId}.json`, csv: `report_${batchId}.csv`, log: `log_${batchId}.html`, mediaDir: `media_${batchId}` };
+}
+function makeBatchId(d = /* @__PURE__ */ new Date()) {
+  const p = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`;
+}
+
+// src/ui/app.js
+var VERSION = true ? "0.2.0" : "dev";
+var $ = (id) => document.getElementById(id);
+var esc2 = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+var ffmpegBase = new URL("vendor/", document.baseURI).href;
+var curve = validateCurve(volume_curve_default);
+var batch = new Batch({ curve, options: loadOptions() });
+var outDir = null;
+var outGranted = false;
+var writing = false;
+function loadOptions() {
+  try {
+    return JSON.parse(localStorage.getItem("pptx-leveler:options") ?? "{}");
+  } catch {
+    return {};
+  }
+}
+function saveOptions() {
+  try {
+    localStorage.setItem("pptx-leveler:options", JSON.stringify(batch.options));
+  } catch {
+  }
+}
+var worker = new Worker(new URL("worker.js", document.baseURI), { type: "module" });
+var pending = /* @__PURE__ */ new Map();
+worker.onmessage = (e) => {
+  const m = e.data;
+  const h = pending.get(m.id);
+  if (!h) return;
+  if (m.type === "error") {
+    pending.delete(m.id);
+    h.reject(new Error(m.message));
+    return;
+  }
+  h.on?.(m);
+  if (m.type === "done" || m.type === "written" || m.type === "excerpted" || m.type === "toned") {
+    pending.delete(m.id);
+    h.resolve(m);
+  }
+};
+function call(msg, on) {
+  const id = Math.random().toString(36).slice(2);
+  return new Promise((resolve, reject) => {
+    pending.set(id, { resolve, reject, on });
+    worker.postMessage({ ...msg, id });
+  });
+}
+var scheduled = false;
+function render() {
+  if (scheduled) return;
+  scheduled = true;
+  requestAnimationFrame(() => {
+    scheduled = false;
+    renderDecks();
+    renderReview();
+    renderWrite();
+  });
+}
+var mb = (n) => n >= 1e9 ? `${(n / 1e9).toFixed(2)} GB` : `${(n / 1e6).toFixed(n < 1e7 ? 1 : 0)} MB`;
+var num = (x2, d = 1) => x2 == null || !Number.isFinite(x2) ? "\u2013" : x2.toFixed(d).replace("-", "\u2212");
+var pct2 = (vol) => vol == null ? "\u2013" : `${+(vol / 1e3).toFixed(vol % 1e3 ? 1 : 0)}%`;
+function dur2(s) {
+  if (s == null || !Number.isFinite(s)) return "\u2013";
+  const m = Math.floor(s / 60), r = Math.round(s - m * 60);
+  if (m >= 60) return `${Math.floor(m / 60)}:${String(m % 60).padStart(2, "0")}:${String(r).padStart(2, "0")}`;
+  return `${m}:${String(r).padStart(2, "0")}`;
+}
+function renderDecks() {
+  const ul = $("decks");
+  ul.innerHTML = batch.sortedDecks().map((d) => {
+    let meta = mb(d.size);
+    let frac = 0;
+    if (d.status === "queued") meta += " \xB7 waiting";
+    else if (d.status === "analysing") {
+      const clips = d.inventory?.clips.filter((c) => c.status === "ok").length ?? 0;
+      const doneN = d.results.size;
+      frac = clips ? (doneN + (d.progress ?? 0)) / clips : 0;
+      meta += d.inventory ? ` \xB7 measuring ${Math.min(doneN + 1, clips)} of ${clips}` : " \xB7 reading";
+    } else if (d.status === "done") {
+      const n = d.inventory.clips.length;
+      meta += ` \xB7 ${n === 0 ? "no media" : `${n} clip${n === 1 ? "" : "s"}`}`;
+      frac = 1;
+    } else if (d.status === "error") meta += ` \xB7 ${d.error}`;
+    return `<li class="deck ${d.status}"><span class="name">${esc2(d.name)}</span><span class="meta">${esc2(meta)}</span><button type="button" class="icon" data-remove="${esc2(d.name)}" ${d.status === "analysing" || writing ? "disabled" : ""} aria-label="Remove ${esc2(d.name)}">Remove</button>${d.status === "analysing" || d.status === "queued" ? `<div class="bar"><span style="width:${(frac * 100).toFixed(1)}%"></span></div>` : ""}</li>`;
+  }).join("");
+}
+var STATUS_NOTE = {
+  "skipped-muted": ["Muted", "info"],
+  "skipped-vol0": ["Volume 0", "info"],
+  "skipped-linked": ["Linked file, not embedded", "warn"],
+  "no-timing-node": ["No playback settings", "warn"],
+  "missing-media": ["Media file missing", "bad"],
+  "no-audio-track": ["No audio", "info"],
+  "decode-failed": ["Couldn't decode", "bad"],
+  "trim-empty": ["Trimmed to nothing", "warn"],
+  pending: ["Measuring\u2026", "info"]
+};
+function notes(r, warnDb) {
+  const out = [];
+  const p = r.plan;
+  if (p?.role === "anchor") out.push(["Anchor \xB7 quietest clip", "anchor"]);
+  if (r.status !== "ok" && STATUS_NOTE[r.status]) {
+    const [t, c] = STATUS_NOTE[r.status];
+    out.push([t, c, r.measure?.error]);
+  } else if (r.status === "ok" && r.silent) out.push(["Silent", "info"]);
+  if (p?.role === "opted-out") {
+    out.push(["Not normalised", "info"]);
+    if (p.levelVsAnchorDb != null && Math.abs(p.levelVsAnchorDb) > 1) {
+      out.push([`Plays ${num(Math.abs(p.levelVsAnchorDb))} dB ${p.levelVsAnchorDb < 0 ? "quieter" : "louder"}`, "warn"]);
+    }
+  }
+  const w = /* @__PURE__ */ new Set([...r.warnings ?? [], ...p?.warnings ?? []]);
+  if (w.has("large-attenuation")) out.push([`Cut by more than ${warnDb} dB`, "warn"]);
+  if (w.has("clamped-to-min-vol")) out.push(["At minimum volume", "bad"]);
+  if (w.has("vol-absent")) out.push(["No volume set (assumed 50%)", "warn"]);
+  if (w.has("multiple-timing-nodes")) out.push(["Several playback settings", "warn"]);
+  if (w.has("short")) out.push(["Under 0.4 s", "info"]);
+  if (w.has("hidden-slide")) out.push(["Hidden slide", "info"]);
+  if (w.has("on-layout")) out.push(["On a layout", "info"]);
+  if (w.has("on-master")) out.push(["On a master", "info"]);
+  if (w.has("fade-applied")) out.push(["Fades included", "info"]);
+  return out.map(([t, c, title]) => `<span class="badge ${c}"${title ? ` title="${esc2(title)}"` : ""}>${esc2(t)}</span>`).join("");
+}
+function renderReview() {
+  const plan = batch.plan();
+  const rows = plan.rows;
+  $("empty").hidden = rows.length > 0 || batch.decks.size > 0;
+  if (batch.decks.size > 0 && rows.length === 0) {
+    $("empty").hidden = false;
+    $("empty").textContent = batch.analysing ? "Reading presentations\u2026" : "None of these presentations contain audio or video.";
+  } else $("empty").textContent = "Add presentations to see their clips here.";
+  const counts = { norm: 0, skipped: 0, optout: 0, warn: 0 };
+  for (const r of rows) {
+    if (r.plan?.role === "normalised" || r.plan?.role === "anchor") counts.norm++;
+    else if (r.plan?.role === "opted-out") counts.optout++;
+    else counts.skipped++;
+    if ((r.plan?.warnings ?? []).length || r.status === "decode-failed") counts.warn++;
+  }
+  const anchor = rows.find((r) => r.plan?.role === "anchor");
+  const analysingN = batch.sortedDecks().filter((d) => d.status === "queued" || d.status === "analysing").length;
+  const metrics = [];
+  if (analysingN) metrics.push(["Status", `Measuring`, `${analysingN} presentation${analysingN === 1 ? "" : "s"} left`]);
+  metrics.push(["Reference level", plan.lref == null ? "\u2013" : `${num(plan.lref)} LUFS`, anchor ? `Anchor: #${anchor.id}, ${anchor.deck}, slide ${anchor.clip.slideNumber ?? "\u2013"}` : "The quietest clip plays at 100%"]);
+  metrics.push(["Spread", plan.spreadDb == null ? "\u2013" : `${num(plan.spreadDb)} dB`, "Loudest minus quietest"]);
+  metrics.push(["Clips", String(rows.length), `${counts.norm} normalised \xB7 ${counts.skipped} skipped \xB7 ${counts.optout} not normalised`]);
+  metrics.push(["Need attention", String(counts.warn), counts.warn ? "See Notes" : "Nothing flagged"]);
+  $("summary").innerHTML = rows.length || analysingN ? metrics.map(([k, v, s]) => {
+    const toneBtn = k === "Reference level" && plan.lref != null ? ` <button type="button" class="play${tone ? " on" : ""}" id="tone-btn" title="Play a 1 kHz reference tone at this level in the browser. It should sound as loud as the clips. A rough guide only; use the tone deck in PowerPoint to align the console." aria-label="${tone ? "Stop" : "Play"} reference tone">${tone ? "\u25A0" : "\u25B6"}</button>` : "";
+    return `<div class="metric"><div class="k">${esc2(k)}</div><div class="v">${esc2(v)}${toneBtn}</div><div class="s">${esc2(s)}</div></div>`;
+  }).join("") : "";
+  const warnDb = batch.options.warnAttenuationDb;
+  $("clips").querySelector("tbody").innerHTML = rows.map((r) => {
+    const p = r.plan;
+    const active = p?.role === "normalised" || p?.role === "anchor";
+    const canOptOut = r.status === "ok" && !r.silent;
+    const c = r.clip;
+    const trimmed = c.trim.startMs || c.trim.endMs;
+    const vol = p?.newVol != null && p.change ? `${pct2(r.vol)} <span class="arrow">\u2192</span> ${pct2(p.newVol)}` : pct2(r.vol);
+    return `<tr class="${active ? "" : "inactive"} ${p?.role === "anchor" ? "anchor" : ""}"><td class="c-skip"><input type="checkbox" data-key="${esc2(r.key)}" ${r.optOut ? "checked" : ""} ${canOptOut && !writing ? "" : "disabled"} aria-label="Don't normalise clip ${r.id}"></td><td class="c-id">${r.id}</td><td class="c-play">${r.status === "ok" && !r.silent ? `<button type="button" class="play${playing?.key === r.key ? " on" : ""}" data-play="${esc2(r.key)}" title="Play at the ${active ? "normalised" : "current"} level (Alt-click: original level)" aria-label="${playing?.key === r.key ? "Stop" : "Play"} clip ${r.id}">${playing?.key === r.key ? "\u25A0" : "\u25B6"}</button>` : ""}</td><td class="deck-name">${esc2(r.deck)}</td><td class="c-n">${c.slideNumber ?? esc2(c.container)}${c.instance > 1 ? `<span class="muted"> \xB7${c.instance}</span>` : ""}</td><td class="clip-name">${esc2(c.shapeName ?? "")} <span class="muted small">${c.kind}</span></td><td class="c-n">${dur2(r.measure?.loudness?.durationS)}${trimmed ? ' <span class="muted small">trimmed</span>' : ""}</td><td class="c-n">${r.loudness != null && Number.isFinite(r.loudness) ? `${num(r.loudness)}` : r.silent ? "silent" : "\u2013"}</td><td class="c-n">${p?.gainDb != null ? `${num(p.gainDb)} dB` : "\u2013"}</td><td class="c-n">${vol}</td><td>${notes(r, warnDb)}</td></tr>`;
+  }).join("");
+}
+function renderWrite() {
+  const plan = batch.plan();
+  const toWrite = batch.decksToWrite(plan);
+  const btn = $("write");
+  btn.disabled = writing || !batch.ready || !outDir || plan.rows.length === 0;
+  btn.textContent = toWrite.length ? `Save ${toWrite.length} presentation${toWrite.length === 1 ? "" : "s"} and batch log` : "Save batch log";
+  if (!writing) {
+    let s = "";
+    if (!batch.decks.size) s = "Add presentations first.";
+    else if (batch.analysing) s = "Waiting for measurements to finish.";
+    else if (!outDir) s = "Choose an output folder first.";
+    else if (!plan.rows.length) s = "No clips to report on.";
+    else if (!toWrite.length) s = "No presentation needs changing; the batch log can still be saved.";
+    $("write-status").textContent = s;
+  }
+  $("out-status").textContent = outDir ? `${outDir.name}${outGranted ? "" : " (click to reconnect)"}` : "No folder chosen.";
+  $("pick-out").textContent = outDir && !outGranted ? "Reconnect folder" : outDir ? "Change folder\u2026" : "Choose folder\u2026";
+}
+var isDeck = (name) => /\.pptx$/i.test(name) && !name.startsWith("~$");
+async function addFiles(entries) {
+  const rejected = [];
+  for (const { file, handle } of entries) {
+    if (!isDeck(file.name)) {
+      rejected.push(`${file.name} (not a .pptx)`);
+      continue;
+    }
+    if (!batch.addDeck({ name: file.name, size: file.size, file, handle })) rejected.push(`${file.name} (already added)`);
+  }
+  if (rejected.length) toast(`Skipped: ${rejected.join(", ")}`);
+  render();
+  pump();
+}
+async function fromHandle(h, out) {
+  if (h.kind === "file") {
+    if (isDeck(h.name)) out.push({ file: await h.getFile(), handle: h });
+  } else if (h.kind === "directory") {
+    for await (const child2 of h.values()) if (child2.kind === "file" && isDeck(child2.name)) out.push({ file: await child2.getFile(), handle: child2 });
+  }
+}
+function setupDrop() {
+  const drop = $("drop");
+  const over = (on) => drop.classList.toggle("over", on);
+  for (const el of [drop, document.body]) {
+    el.addEventListener("dragover", (e) => {
+      e.preventDefault();
+      over(true);
+    });
+    el.addEventListener("dragleave", (e) => {
+      if (e.target === drop || e.target === document.body) over(false);
+    });
+  }
+  document.body.addEventListener("drop", async (e) => {
+    e.preventDefault();
+    over(false);
+    const items = [...e.dataTransfer?.items ?? []].filter((i2) => i2.kind === "file");
+    const handles = items.map((i2) => i2.getAsFileSystemHandle?.() ?? null);
+    const files = [...e.dataTransfer?.files ?? []];
+    const out = [];
+    if (handles.length && handles.every(Boolean)) {
+      for (const hp of handles) {
+        const h = await hp;
+        if (h) await fromHandle(h, out);
+      }
+    } else {
+      for (const f of files) out.push({ file: f });
+    }
+    addFiles(out);
+  });
+  drop.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      pickFiles();
+    }
+  });
+  drop.addEventListener("click", (e) => {
+    if (e.target === drop || e.target.tagName === "P" || e.target.tagName === "STRONG") pickFiles();
+  });
+  $("add").onclick = (e) => {
+    e.stopPropagation();
+    pickFiles();
+  };
+  $("file-input").onchange = (e) => {
+    addFiles([...e.target.files].map((file) => ({ file })));
+    e.target.value = "";
+  };
+}
+async function pickFiles() {
+  if (window.showOpenFilePicker) {
+    try {
+      const hs = await showOpenFilePicker({ multiple: true, id: "pptx-leveler-in", types: [{ description: "PowerPoint", accept: { "application/vnd.openxmlformats-officedocument.presentationml.presentation": [".pptx"] } }] });
+      const out = [];
+      for (const h of hs) await fromHandle(h, out);
+      addFiles(out);
+    } catch (e) {
+      if (e.name !== "AbortError") toast(e.message);
+    }
+  } else $("file-input").click();
+}
+var pumping = false;
+async function pump() {
+  if (pumping) return;
+  pumping = true;
+  try {
+    for (; ; ) {
+      const d = batch.sortedDecks().find((x2) => x2.status === "queued");
+      if (!d) break;
+      d.status = "analysing";
+      render();
+      try {
+        await call({ type: "analyze", file: d.file, fileName: d.name, ffmpegBase }, (m) => {
+          if (!batch.decks.has(d.name)) return;
+          if (m.type === "deck") d.inventory = m.deck;
+          else if (m.type === "progress") d.progress = m.fraction;
+          else if (m.type === "clip") {
+            d.results.set(m.key, m.result);
+            d.progress = 0;
+          }
+          render();
+        });
+        d.status = "done";
+      } catch (e) {
+        d.status = "error";
+        d.error = e.message;
+      }
+      render();
+    }
+  } finally {
+    pumping = false;
+  }
+}
+async function restoreOutDir() {
+  const h = await kvGet("outDir");
+  if (!h) return;
+  outDir = h;
+  outGranted = await h.queryPermission?.({ mode: "readwrite" }) === "granted";
+  render();
+}
+async function ensureOutPermission() {
+  if (!outDir) return false;
+  if (await outDir.queryPermission({ mode: "readwrite" }) === "granted") return outGranted = true;
+  outGranted = await outDir.requestPermission({ mode: "readwrite" }) === "granted";
+  render();
+  return outGranted;
+}
+async function pickOutDir() {
+  if (outDir && !outGranted) {
+    await ensureOutPermission();
+    return;
+  }
+  try {
+    const h = await showDirectoryPicker({ id: "pptx-leveler-out", mode: "readwrite" });
+    outDir = h;
+    outGranted = true;
+    await kvSet("outDir", h);
+    render();
+  } catch (e) {
+    if (e.name !== "AbortError") toast(e.message);
+  }
+}
+async function exists(dir, name) {
+  try {
+    return await dir.getFileHandle(name);
+  } catch {
+    return null;
+  }
+}
+function dialog(title, bodyHtml, okLabel = "OK") {
+  const dlg = $("dlg");
+  $("dlg-title").textContent = title;
+  $("dlg-body").innerHTML = bodyHtml;
+  $("dlg-ok").textContent = okLabel;
+  dlg.returnValue = "";
+  dlg.showModal();
+  return new Promise((resolve) => dlg.addEventListener("close", () => resolve(dlg.returnValue === "ok"), { once: true }));
+}
+async function writeAll() {
+  if (writing || !await ensureOutPermission()) return;
+  const plan = batch.plan();
+  const decks = batch.decksToWrite(plan);
+  if (!plan.rows.length) return;
+  const collisions = [];
+  for (const d of decks) {
+    const name = outputName(d.name);
+    const h = await exists(outDir, name);
+    if (!h) continue;
+    if (d.handle && await d.handle.isSameEntry(h)) {
+      toast(`${d.name} is itself named like an output file; rename it first.`);
+      return;
+    }
+    collisions.push(name);
+  }
+  if (collisions.length && !await dialog(
+    `Replace ${collisions.length} existing file${collisions.length === 1 ? "" : "s"}?`,
+    `<p>These already exist in <strong>${esc2(outDir.name)}</strong>:</p><ul>${collisions.map((n) => `<li>${esc2(n)}</li>`).join("")}</ul>`,
+    "Replace"
+  )) return;
+  writing = true;
+  const ul = $("written");
+  ul.innerHTML = "";
+  render();
+  const o = batch.options;
+  const batchId = makeBatchId();
+  const names = batchFileNames(batchId);
+  const files = { decks: [], ...names, toneDeck: null };
+  const line = (text, cls = "") => {
+    const li = document.createElement("li");
+    li.className = cls;
+    li.textContent = text;
+    ul.appendChild(li);
+    return li;
+  };
+  let failed = 0;
+  for (const [i2, d] of decks.entries()) {
+    const name = outputName(d.name);
+    $("write-status").textContent = `Saving ${i2 + 1} of ${decks.length}: ${name}`;
+    const li = line(`${name} \u2026`);
+    try {
+      const r = await call({
+        type: "write",
+        file: d.file,
+        fileName: d.name,
+        outDir,
+        outName: name,
+        plan: batch.deckPlan(plan, d.name),
+        verify: o.verify,
+        copyUnchanged: o.copyUnchanged,
+        overwrite: true
+      }, (m) => {
+        if (m.type === "write-progress") li.textContent = `${name} \u2026 ${Math.round(m.fraction * 100)}%`;
+      });
+      d.write = r;
+      files.decks.push({ input: d.name, output: r.outcome === "written" ? name : null, outcome: r.outcome, changes: r.changes.length });
+      if (r.outcome === "written") {
+        li.className = "ok";
+        li.textContent = `\u2713 ${name} \xB7 ${r.changes.length} clip${r.changes.length === 1 ? "" : "s"} adjusted${r.verified ? " \xB7 checked" : ""}`;
+      } else {
+        li.className = "skip";
+        li.textContent = `\u2013 ${name} \xB7 ${r.outcome === "exists" ? "already exists, not replaced" : "no change needed"}`;
+      }
+    } catch (e) {
+      failed++;
+      files.decks.push({ input: d.name, output: null, outcome: "failed", error: e.message });
+      li.className = "bad";
+      li.textContent = `\u2717 ${name} \xB7 ${e.message}`;
+    }
+  }
+  if (o.toneDeck && plan.lref != null) {
+    const name = toneDeckName(batchId, plan.lref);
+    $("write-status").textContent = `Saving ${name}`;
+    const li = line(`${name} \u2026`);
+    try {
+      const r = await call({
+        type: "tone",
+        templateUrl: new URL("assets/reference_template.pptx", document.baseURI).href,
+        outDir,
+        outName: name,
+        lref: plan.lref,
+        batchId,
+        date: (/* @__PURE__ */ new Date()).toLocaleDateString(),
+        deckCount: files.decks.filter((x2) => x2.output).length,
+        clipCount: plan.rows.filter((x2) => x2.plan?.role === "normalised" || x2.plan?.role === "anchor").length,
+        seconds: o.toneSeconds
+      });
+      const ok = r.measured.every((m) => Math.abs(m.lufs - plan.lref) <= 0.1 && m.vol === 1e5);
+      files.toneDeck = name;
+      li.className = ok ? "ok" : "bad";
+      li.textContent = `${ok ? "\u2713" : "\u2717"} ${name} \xB7 tones measure ${r.measured.map((m) => `${num(m.lufs)} (${m.channels === 1 ? "mono" : "stereo"})`).join(", ")} LUFS`;
+      if (!ok) failed++;
+    } catch (e) {
+      failed++;
+      li.className = "bad";
+      li.textContent = `\u2717 ${name} \xB7 ${e.message}`;
+    }
+  }
+  const rows = plan.rows.map((r) => ({ ...r }));
+  if (o.excerpts) {
+    const want = rows.filter((r) => r.clip.mediaPart && !["skipped-linked", "missing-media"].includes(r.clip.status));
+    if (want.length) {
+      const li = line(`${names.mediaDir}/ \u2026`);
+      const mediaDir = await outDir.getDirectoryHandle(names.mediaDir, { create: true });
+      const done = /* @__PURE__ */ new Map();
+      let n = 0, bad = 0;
+      for (const r of want) {
+        n++;
+        $("write-status").textContent = `Saving media ${n} of ${want.length}`;
+        const k = `${r.deck}|${r.clip.mediaPart}|${r.clip.trim.startMs}`;
+        if (!done.has(k)) {
+          const d = batch.decks.get(r.deck);
+          try {
+            const res = await call({
+              type: "excerpt",
+              file: d.file,
+              fileName: d.name,
+              mediaPart: r.clip.mediaPart,
+              startMs: r.clip.trim.startMs,
+              mediaDir,
+              baseName: mediaFileName(r, "").replace(/\.$/, ""),
+              maxFullBytes: 1 << 20,
+              seconds: 5,
+              ffmpegBase
+            });
+            done.set(k, { path: `${names.mediaDir}/${res.name}`, kind: res.kind, seconds: res.seconds });
+          } catch (e) {
+            bad++;
+            done.set(k, { error: e.message });
+          }
+        }
+        r.media = done.get(k);
+      }
+      li.className = bad ? "bad" : "ok";
+      li.textContent = `${bad ? "\u2717" : "\u2713"} ${names.mediaDir}/ \xB7 ${done.size - bad} media file${done.size - bad === 1 ? "" : "s"}${bad ? `, ${bad} failed` : ""}`;
+    }
+  }
+  try {
+    const report = buildReport({ batchId, appVersion: VERSION, curve, plan, rows, files });
+    await writeText(names.json, reportToJson(report), "application/json");
+    await writeText(names.csv, reportToCsv(report), "text/csv");
+    await writeText(names.log, reportToHtml(report), "text/html");
+    line(`\u2713 ${names.log}, ${names.csv}, ${names.json}`, "ok");
+  } catch (e) {
+    failed++;
+    line(`\u2717 reports \xB7 ${e.message}`, "bad");
+  }
+  writing = false;
+  $("write-status").textContent = failed ? `Finished with ${failed} problem${failed === 1 ? "" : "s"}; see the list below.` : `Saved batch ${batchId} to ${outDir.name}. Open ${names.log} there to review it.`;
+  render();
+}
+async function writeText(name, text, type) {
+  const fh = await outDir.getFileHandle(name, { create: true });
+  const w = await fh.createWritable();
+  await w.write(new Blob([text], { type }));
+  await w.close();
+}
+var player = new Audio();
+player.preload = "none";
+var playing = null;
+var MIME = { ".mp4": "video/mp4", ".m4v": "video/mp4", ".mov": "video/mp4", ".m4a": "audio/mp4", ".mp3": "audio/mpeg", ".wav": "audio/wav" };
+var audioCtx = null;
+var tone = null;
+function stopTone() {
+  if (!tone) return;
+  const { osc, gain } = tone;
+  const t = audioCtx.currentTime;
+  gain.gain.setValueAtTime(gain.gain.value, t);
+  gain.gain.linearRampToValueAtTime(0, t + 0.01);
+  osc.stop(t + 0.02);
+  tone = null;
+  render();
+}
+function toggleTone() {
+  if (tone) {
+    stopTone();
+    return;
+  }
+  const lref = batch.plan().lref;
+  if (lref == null) return;
+  stopPlayback();
+  audioCtx ??= new AudioContext();
+  audioCtx.resume();
+  const osc = new OscillatorNode(audioCtx, { type: "sine", frequency: 1e3 });
+  const gain = new GainNode(audioCtx, { gain: 0 });
+  osc.connect(gain).connect(audioCtx.destination);
+  const t = audioCtx.currentTime;
+  gain.gain.setValueAtTime(0, t);
+  gain.gain.linearRampToValueAtTime(Math.pow(10, lref / 20), t + 0.01);
+  osc.start(t);
+  tone = { osc, gain };
+  render();
+}
+function stopPlayback() {
+  player.pause();
+  if (playing?.url) URL.revokeObjectURL(playing.url);
+  playing = null;
+  render();
+}
+player.addEventListener("timeupdate", () => {
+  if (playing?.endS != null && player.currentTime >= playing.endS) stopPlayback();
+});
+player.addEventListener("ended", stopPlayback);
+player.addEventListener("error", () => {
+  const key = playing?.key;
+  stopPlayback();
+  if (key) toast("This browser can't play that clip's format; it is still measured and normalised.");
+});
+async function playClip(key, original = false) {
+  if (playing?.key === key) {
+    stopPlayback();
+    return;
+  }
+  stopPlayback();
+  stopTone();
+  const row = batch.plan().rows.find((r) => r.key === key);
+  const d = row && batch.decks.get(row.deck);
+  if (!row || !d?.file) return;
+  d.zip ??= await openZip(blobSource(d.file, d.name));
+  const entry = d.zip.get(row.clip.mediaPart);
+  if (!entry) return;
+  const range = await entry.range();
+  const ext = (row.clip.mediaPart.match(/\.[^./]+$/)?.[0] ?? "").toLowerCase();
+  const data = range ? d.file.slice(range.offset, range.offset + range.length) : await entry.bytes();
+  const url = URL.createObjectURL(new Blob([data], { type: MIME[ext] ?? "" }));
+  const vol = original || !row.plan?.change ? row.vol : row.plan.newVol;
+  const startS = row.clip.trim.startMs / 1e3;
+  const lenS = row.measure?.loudness?.durationS;
+  playing = { key, url, endS: lenS != null ? startS + lenS : null };
+  player.src = url;
+  player.volume = Math.max(0, Math.min(1, Math.pow(10, volToDb(vol ?? 0, curve) / 20)));
+  player.currentTime = startS;
+  render();
+  try {
+    await player.play();
+  } catch (e) {
+    if (e.name !== "AbortError") {
+      stopPlayback();
+      toast(`Can't play this clip: ${e.message}`);
+    }
+  }
+}
+function setupOptions() {
+  const o = batch.options;
+  const bind = (id, key, read) => {
+    const el = $(id);
+    if (el.type === "checkbox") el.checked = !!o[key];
+    else el.value = o[key];
+    el.addEventListener("change", () => {
+      o[key] = read(el);
+      saveOptions();
+      render();
+    });
+  };
+  bind("opt-keep", "keepOriginalVolume", (el) => el.checked);
+  bind("opt-warn", "warnAttenuationDb", (el) => Math.max(1, Math.min(60, Number(el.value) || 15)));
+  bind("opt-copy", "copyUnchanged", (el) => el.checked);
+  bind("opt-verify", "verify", (el) => el.checked);
+  bind("opt-tone", "toneDeck", (el) => el.checked);
+  bind("opt-tone-s", "toneSeconds", (el) => Math.max(5, Math.min(600, Number(el.value) || 30)));
+  bind("opt-excerpts", "excerpts", (el) => el.checked);
+  $("optout-load").onclick = () => $("optout-input").click();
+  $("optout-input").onchange = async (e) => {
+    const f = e.target.files[0];
+    e.target.value = "";
+    if (!f) return;
+    try {
+      const r = batch.importOptOut(JSON.parse(await f.text()));
+      $("optout-status").textContent = `Loaded ${r.total} clip${r.total === 1 ? "" : "s"}; ${r.matched} match this batch.`;
+      render();
+    } catch (err2) {
+      $("optout-status").textContent = err2.message;
+    }
+  };
+  $("optout-save").onclick = () => {
+    const blob = new Blob([JSON.stringify(batch.exportOptOut(), null, 2)], { type: "application/json" });
+    const a = Object.assign(document.createElement("a"), { href: URL.createObjectURL(blob), download: "optout.json" });
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1e3);
+  };
+  $("summary").addEventListener("click", (e) => {
+    if (e.target.closest?.("#tone-btn")) toggleTone();
+  });
+  $("clips").addEventListener("click", (e) => {
+    const btn = e.target.closest?.("button[data-play]");
+    if (btn) playClip(btn.dataset.play, e.altKey);
+  });
+  $("clips").addEventListener("change", (e) => {
+    const key = e.target.dataset?.key;
+    if (!key) return;
+    batch.setOptOut(key, e.target.checked);
+    render();
+  });
+  $("decks").addEventListener("click", (e) => {
+    const name = e.target.dataset?.remove;
+    if (!name) return;
+    batch.removeDeck(name);
+    render();
+  });
+}
+var toastTimer;
+function toast(msg) {
+  const s = $("write-status");
+  s.textContent = msg;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => render(), 6e3);
+}
+function isChromium() {
+  if (new URLSearchParams(location.search).get("browser") === "other") return false;
+  return !!navigator.userAgentData?.brands?.some((b) => b.brand === "Chromium");
+}
+function setupEnv() {
+  const chips = [];
+  const fsa = "showDirectoryPicker" in window;
+  if (!isChromium()) chips.push(["Works best in Chrome or Edge", "warn", "Volume Fix uses folder access and WebCodecs, which Chrome and Edge support fully."]);
+  chips.push([`ffmpeg ${self.crossOriginIsolated ? "multithreaded" : "single-threaded"}`, self.crossOriginIsolated ? "ok" : "warn"]);
+  chips.push([`WebCodecs ${"AudioDecoder" in window ? "on" : "off"}`, "AudioDecoder" in window ? "ok" : "warn"]);
+  $("env").innerHTML = chips.map(([t, c, title]) => `<span class="chip ${c}"${title ? ` title="${esc2(title)}"` : ""}>${esc2(t)}</span>`).join("");
+  if (!fsa || !("Worker" in window)) {
+    const n = $("unsupported");
+    n.hidden = false;
+    n.textContent = "This browser can't save files to a folder. Use Chrome or Edge on Windows or macOS.";
+  }
+  $("version").textContent = `Volume Fix ${VERSION}`;
+  $("curve").textContent = curve.version;
+}
+setupEnv();
+setupDrop();
+setupOptions();
+$("pick-out").onclick = pickOutDir;
+$("write").onclick = writeAll;
+restoreOutDir();
+render();
+window.__pptxLeveler = {
+  batch,
+  addFiles,
+  setOutDir: async (h) => {
+    outDir = h;
+    outGranted = true;
+    render();
+  },
+  writeAll,
+  idle: () => !batch.analysing && !writing
+};
