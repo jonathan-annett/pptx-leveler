@@ -77,6 +77,11 @@
         </div>
       </div>
     </details>
+    <div class="row tools">
+      <button type="button" id="save-media" class="secondary" title="Copy every embedded audio and video file to a folder you choose, one subfolder per presentation, named by slide (slide16-clip2.mov), plus volume-fix-gains.txt listing the gain each file needs in other playout software. The presentations aren't changed.">Save all media files…</button>
+      <span id="media-status" class="muted small"></span>
+    </div>
+    <div id="deck-notes" class="notice warn" hidden></div>
     <div id="summary" class="summary"></div>
     <div class="table-wrap">
       <table id="clips">
@@ -84,7 +89,7 @@
           <tr>
             <th scope="col" class="c-skip" title="Don't normalise this clip">Skip</th>
             <th scope="col" class="c-id">#</th>
-            <th scope="col" class="c-play"><span class="sr">Play</span></th>
+            <th scope="col" class="c-play"><span class="sr">Play and download</span></th>
             <th scope="col">Presentation</th>
             <th scope="col" class="c-n">Slide</th>
             <th scope="col">Clip</th>

@@ -123,6 +123,10 @@ th .unit { font-weight: 400; font-size: 11px; }
 td.c-play, th.c-play { width: 1%; padding-left: 0; padding-right: 0; text-align: center; }
 button.play { width: 28px; height: 24px; padding: 0; font-size: 11px; line-height: 1; border-radius: 12px; color: var(--accent); }
 button.play.on { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
+.acts { display: inline-flex; gap: 4px; align-items: center; padding: 0 4px; }
+button.dl { width: 28px; height: 24px; padding: 0; font-size: 14px; line-height: 1; border-radius: 12px; color: var(--muted); }
+button.dl:hover { color: var(--accent); }
+.tools { margin: 0 0 12px; }
 .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 
 /* write */
@@ -134,6 +138,11 @@ button.play.on { background: var(--accent); color: var(--accent-fg); border-colo
 
 .notice { border-radius: 6px; padding: 10px 12px; margin: 12px 0; }
 .notice.bad { background: var(--bad-soft); color: var(--bad); }
+.notice.warn { background: var(--warn-soft); color: var(--fg); border: 1px solid color-mix(in srgb, var(--warn) 40%, transparent); }
+.notice.warn strong { color: var(--warn); }
+.notice p { margin: 0 0 6px; }
+.notice p:last-child { margin-bottom: 0; }
+.deck .badge { margin-left: 6px; }
 
 dialog { border: 1px solid var(--line-strong); border-radius: var(--radius); background: var(--surface); color: var(--fg); max-width: min(560px, calc(100vw - 32px)); padding: 18px; }
 dialog::backdrop { background: rgb(0 0 0 / 0.35); }

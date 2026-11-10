@@ -154,6 +154,55 @@ var DEFAULT_OPTIONS = {
   toneSeconds: 30,
   excerpts: true
 };
+var UNSAFE = /[<>:"/\\|?*\u0000-\u001f]/g;
+function deckFolderName(fileName) {
+  return fileName.replace(/\.pptx$/i, "").replace(UNSAFE, "_").replace(/[. ]+$/, "") || "presentation";
+}
+function clipMediaName(clip) {
+  const ext = (clip.mediaPart?.match(/\.[^./]+$/)?.[0] ?? "").toLowerCase();
+  const where = clip.container === "slide" && clip.slideNumber != null ? `slide${clip.slideNumber}` : clip.partName.split("/").pop().replace(/\.xml$/i, "");
+  return `${where}-clip${clip.instance}${ext}`;
+}
+function hasEmbeddedMedia(clip) {
+  return !!clip.mediaPart && clip.status !== "skipped-linked" && clip.status !== "missing-media";
+}
+function playoutGainsText(plan, { date = /* @__PURE__ */ new Date() } = {}) {
+  const fmt2 = (x2) => Math.abs(x2) < 0.05 ? "0.0" : (x2 > 0 ? "+" : "") + x2.toFixed(1);
+  const lines = [
+    "Volume Fix - playback gains for the extracted media files",
+    `Made ${date.toLocaleString()}`,
+    ""
+  ];
+  if (plan.lref == null) {
+    lines.push("No clip has been measured yet, so there are no gains to suggest.");
+    return lines.join("\r\n") + "\r\n";
+  }
+  const anchor = plan.rows.find((r) => r.plan?.role === "anchor");
+  lines.push(
+    `Reference: ${plan.lref.toFixed(1)} LUFS, the quietest clip, set to 0.0 dB.`,
+    "Apply each gain in your playout software so every clip plays at the same loudness.",
+    "Then align your desk to the reference tone deck, or to the first clip.",
+    ""
+  );
+  const rows = plan.rows.filter((r) => hasEmbeddedMedia(r.clip)).map((r) => {
+    const path2 = `${deckFolderName(r.deck)}\\${clipMediaName(r.clip)}`;
+    let gain = "", note = "";
+    if (Number.isFinite(r.loudness) && !r.silent) {
+      gain = fmt2(plan.lref - r.loudness);
+      if (r.plan?.role === "anchor" || r.key === anchor?.key) note = "reference";
+      else if (r.plan?.role === "opted-out") note = "not normalised in the presentation";
+    } else if (r.status === "no-audio-track") note = "no audio";
+    else if (r.silent) note = "silent";
+    else if (r.status === "pending") note = "not measured yet";
+    else note = r.status;
+    return { gain, path: path2, lufs: Number.isFinite(r.loudness) ? r.loudness.toFixed(1) : "", note };
+  });
+  const w = Math.max(4, ...rows.map((r) => r.path.length));
+  lines.push(`${"Gain dB".padStart(7)}  ${"File".padEnd(w)}  ${"LUFS".padStart(6)}  Note`);
+  lines.push(`${"-".repeat(7)}  ${"-".repeat(w)}  ${"-".repeat(6)}  ----`);
+  for (const r of rows) lines.push(`${r.gain.padStart(7)}  ${r.path.padEnd(w)}  ${r.lufs.padStart(6)}  ${r.note}`.trimEnd());
+  return lines.join("\r\n") + "\r\n";
+}
 function outputName(fileName) {
   return fileName.replace(/\.pptx$/i, "") + "_normalized.pptx";
 }
@@ -994,6 +1043,10 @@ function dur(s) {
   const m = Math.floor(s / 60), r = Math.round(s - m * 60);
   return m >= 60 ? `${Math.floor(m / 60)}:${String(m % 60).padStart(2, "0")}:${String(r).padStart(2, "0")}` : `${m}:${String(r).padStart(2, "0")}`;
 }
+function mediaControlsNote(list) {
+  if (!list?.length) return "";
+  return `<p class="note"><strong>Media controls are on</strong> in ${list.map((m) => `${esc(m.deck)}${m.setting === "default" ? " (PowerPoint default)" : ""}`).join(", ")}. These presentations have video: moving the mouse over a playing video, including the preview in Presenter View, can show a progress bar over it. To turn it off: Slide Show \u2192 Set Up Slide Show \u2192 untick "Show media controls".</p>`;
+}
 var ROLE_LABEL = { anchor: "Anchor", normalised: "Normalised", "opted-out": "Not normalised", skipped: "Skipped" };
 function reportToHtml(report) {
   const rows = report.clips.map((c) => {
@@ -1026,6 +1079,7 @@ td.n{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}td.m{
 button{font:inherit;padding:6px 14px;border-radius:6px;border:1px solid var(--accent);background:var(--accent);color:#fff;cursor:pointer}
 button.play{width:26px;height:22px;padding:0;font-size:10px;border-radius:11px;background:transparent;color:var(--accent)}button.play.on{background:var(--accent);color:#fff}
 .bar{display:flex;flex-wrap:wrap;align-items:center;gap:8px 16px;margin:12px 0}
+.note{border:1px solid #e3a64a;background:rgba(227,166,74,.12);border-radius:6px;padding:8px 10px;margin:8px 0}
 </style></head><body>
 <h1>Batch ${esc(report.batchId)}</h1>
 <div class="muted">Volume Fix ${esc(report.appVersion)} \xB7 ${esc(new Date(report.createdAt).toLocaleString())} \xB7 volume curve ${esc(report.curve.version)}</div>
@@ -1035,6 +1089,7 @@ button.play{width:26px;height:22px;padding:0;font-size:10px;border-radius:11px;b
 <span>Clips <b>${report.clips.length}</b>: ${counts.normalised ?? 0} normalised, ${counts.anchor ?? 0} anchor, ${counts["opted-out"] ?? 0} not normalised, ${counts.skipped ?? 0} skipped</span>
 ${report.files?.toneDeck ? `<span>Tone deck <b>${esc(report.files.toneDeck)}</b></span>` : ""}
 </div>
+${mediaControlsNote(report.files?.mediaControls)}
 ${decks ? `<details><summary>Files</summary><ul>${decks}</ul></details>` : ""}
 <div class="bar"><button type="button" id="export">Export opt-out list</button>
 <span class="muted">Tick clips that should not be normalised, export the list, and load it in Volume Fix at https://volume-fix.com/ (Options \u2192 Load opt-out list) to re-run this batch.</span></div>
@@ -1138,6 +1193,7 @@ function render() {
   requestAnimationFrame(() => {
     scheduled = false;
     renderDecks();
+    renderDeckNotes();
     renderReview();
     renderWrite();
   });
@@ -1150,6 +1206,22 @@ function dur2(s) {
   const m = Math.floor(s / 60), r = Math.round(s - m * 60);
   if (m >= 60) return `${Math.floor(m / 60)}:${String(m % 60).padStart(2, "0")}:${String(r).padStart(2, "0")}`;
   return `${m}:${String(r).padStart(2, "0")}`;
+}
+var MEDIA_CONTROLS_TIP = `PowerPoint's "Show media controls" is on and this presentation has video. Moving the mouse over a playing video, including the preview in Presenter View, can put a progress bar over the full-screen video. To turn it off: Slide Show \u2192 Set Up Slide Show \u2192 untick "Show media controls". Volume Fix does not change this setting.`;
+function mediaControlsWarning(d) {
+  return d.inventory?.warnings?.find((w) => w === "media-controls-shown" || w === "media-controls-default") ?? null;
+}
+function renderDeckNotes() {
+  const flagged = batch.sortedDecks().filter((d) => mediaControlsWarning(d));
+  const el = $("deck-notes");
+  el.hidden = !flagged.length;
+  if (!flagged.length) {
+    el.innerHTML = "";
+    return;
+  }
+  const n = flagged.length;
+  const anyDefault = flagged.some((d) => mediaControlsWarning(d) === "media-controls-default");
+  el.innerHTML = `<p><strong>Media controls are on in ${n} presentation${n === 1 ? "" : "s"} with video:</strong> ${flagged.map((d) => esc2(d.name)).join(", ")}.</p><p>During the show, moving the mouse over a playing video, including the preview in Presenter View, can put a progress bar over the full-screen video. If that isn't wanted, open the presentation in PowerPoint, go to <em>Slide Show \u2192 Set Up Slide Show</em> and untick <em>Show media controls</em>. Volume Fix doesn't change this setting.</p>` + (anyDefault ? `<p class="muted small">"(default)": the file doesn't store the setting, so PowerPoint's default (on) is assumed.</p>` : "");
 }
 function renderDecks() {
   const ul = $("decks");
@@ -1167,7 +1239,9 @@ function renderDecks() {
       meta += ` \xB7 ${n === 0 ? "no media" : `${n} clip${n === 1 ? "" : "s"}`}`;
       frac = 1;
     } else if (d.status === "error") meta += ` \xB7 ${d.error}`;
-    return `<li class="deck ${d.status}"><span class="name">${esc2(d.name)}</span><span class="meta">${esc2(meta)}</span><button type="button" class="icon" data-remove="${esc2(d.name)}" ${d.status === "analysing" || writing ? "disabled" : ""} aria-label="Remove ${esc2(d.name)}">Remove</button>${d.status === "analysing" || d.status === "queued" ? `<div class="bar"><span style="width:${(frac * 100).toFixed(1)}%"></span></div>` : ""}</li>`;
+    const mc = mediaControlsWarning(d);
+    const badge = mc ? `<span class="badge warn" title="${esc2(MEDIA_CONTROLS_TIP)}">Media controls on${mc === "media-controls-default" ? " (default)" : ""}</span>` : "";
+    return `<li class="deck ${d.status}"><span class="name">${esc2(d.name)}${badge}</span><span class="meta">${esc2(meta)}</span><button type="button" class="icon" data-remove="${esc2(d.name)}" ${d.status === "analysing" || writing ? "disabled" : ""} aria-label="Remove ${esc2(d.name)}">Remove</button>${d.status === "analysing" || d.status === "queued" ? `<div class="bar"><span style="width:${(frac * 100).toFixed(1)}%"></span></div>` : ""}</li>`;
   }).join("");
 }
 var STATUS_NOTE = {
@@ -1242,7 +1316,7 @@ function renderReview() {
     const c = r.clip;
     const trimmed = c.trim.startMs || c.trim.endMs;
     const vol = p?.newVol != null && p.change ? `${pct2(r.vol)} <span class="arrow">\u2192</span> ${pct2(p.newVol)}` : pct2(r.vol);
-    return `<tr class="${active ? "" : "inactive"} ${p?.role === "anchor" ? "anchor" : ""}"><td class="c-skip"><input type="checkbox" data-key="${esc2(r.key)}" ${r.optOut ? "checked" : ""} ${canOptOut && !writing ? "" : "disabled"} aria-label="Don't normalise clip ${r.id}"></td><td class="c-id">${r.id}</td><td class="c-play">${r.status === "ok" && !r.silent ? `<button type="button" class="play${playing?.key === r.key ? " on" : ""}" data-play="${esc2(r.key)}" title="Play at the ${active ? "normalised" : "current"} level (Alt-click: original level)" aria-label="${playing?.key === r.key ? "Stop" : "Play"} clip ${r.id}">${playing?.key === r.key ? "\u25A0" : "\u25B6"}</button>` : ""}</td><td class="deck-name">${esc2(r.deck)}</td><td class="c-n">${c.slideNumber ?? esc2(c.container)}${c.instance > 1 ? `<span class="muted"> \xB7${c.instance}</span>` : ""}</td><td class="clip-name">${esc2(c.shapeName ?? "")} <span class="muted small">${c.kind}</span></td><td class="c-n">${dur2(r.measure?.loudness?.durationS)}${trimmed ? ' <span class="muted small">trimmed</span>' : ""}</td><td class="c-n">${r.loudness != null && Number.isFinite(r.loudness) ? `${num(r.loudness)}` : r.silent ? "silent" : "\u2013"}</td><td class="c-n">${p?.gainDb != null ? `${num(p.gainDb)} dB` : "\u2013"}</td><td class="c-n">${vol}</td><td>${notes(r, warnDb)}</td></tr>`;
+    return `<tr class="${active ? "" : "inactive"} ${p?.role === "anchor" ? "anchor" : ""}"><td class="c-skip"><input type="checkbox" data-key="${esc2(r.key)}" ${r.optOut ? "checked" : ""} ${canOptOut && !writing ? "" : "disabled"} aria-label="Don't normalise clip ${r.id}"></td><td class="c-id">${r.id}</td><td class="c-play"><span class="acts">${r.status === "ok" && !r.silent ? `<button type="button" class="play${playing?.key === r.key ? " on" : ""}" data-play="${esc2(r.key)}" title="Play at the ${active ? "normalised" : "current"} level (Alt-click: original level)" aria-label="${playing?.key === r.key ? "Stop" : "Play"} clip ${r.id}">${playing?.key === r.key ? "\u25A0" : "\u25B6"}</button>` : ""}${hasEmbeddedMedia(c) ? `<button type="button" class="dl" data-dl="${esc2(r.key)}" title="Download the original media file (${esc2(clipMediaName(c))}). The presentation isn't changed." aria-label="Download media for clip ${r.id}">\u2913</button>` : ""}</span></td><td class="deck-name">${esc2(r.deck)}</td><td class="c-n">${c.slideNumber ?? esc2(c.container)}${c.instance > 1 ? `<span class="muted"> \xB7${c.instance}</span>` : ""}</td><td class="clip-name">${esc2(c.shapeName ?? "")} <span class="muted small">${c.kind}</span></td><td class="c-n">${dur2(r.measure?.loudness?.durationS)}${trimmed ? ' <span class="muted small">trimmed</span>' : ""}</td><td class="c-n">${r.loudness != null && Number.isFinite(r.loudness) ? `${num(r.loudness)}` : r.silent ? "silent" : "\u2013"}</td><td class="c-n">${p?.gainDb != null ? `${num(p.gainDb)} dB` : "\u2013"}</td><td class="c-n">${vol}</td><td>${notes(r, warnDb)}</td></tr>`;
   }).join("");
 }
 function renderWrite() {
@@ -1448,7 +1522,12 @@ async function writeAll() {
   const o = batch.options;
   const batchId = makeBatchId();
   const names = batchFileNames(batchId);
-  const files = { decks: [], ...names, toneDeck: null };
+  const files = {
+    decks: [],
+    ...names,
+    toneDeck: null,
+    mediaControls: batch.sortedDecks().filter((d) => mediaControlsWarning(d)).map((d) => ({ deck: d.name, setting: mediaControlsWarning(d) === "media-controls-default" ? "default" : "shown" }))
+  };
   const line = (text, cls = "") => {
     const li = document.createElement("li");
     li.className = cls;
@@ -1629,6 +1708,102 @@ player.addEventListener("error", () => {
   stopPlayback();
   if (key) toast("This browser can't play that clip's format; it is still measured and normalised.");
 });
+async function clipBlob(d, clip) {
+  d.zip ??= await openZip(blobSource(d.file, d.name));
+  const entry = d.zip.get(clip.mediaPart);
+  if (!entry) throw new Error(`${clip.mediaPart} is missing from ${d.name}`);
+  const ext = (clip.mediaPart.match(/\.[^./]+$/)?.[0] ?? "").toLowerCase();
+  const range = await entry.range();
+  const data = range ? d.file.slice(range.offset, range.offset + range.length) : await entry.bytes();
+  return new Blob([data], { type: MIME[ext] ?? "application/octet-stream" });
+}
+async function downloadClip(key) {
+  const row = batch.items().find((r) => r.key === key);
+  const d = row && batch.decks.get(row.deck);
+  if (!row || !d?.file) return;
+  try {
+    const url = URL.createObjectURL(await clipBlob(d, row.clip));
+    const a = Object.assign(document.createElement("a"), { href: url, download: `${deckFolderName(d.name)} ${clipMediaName(row.clip)}` });
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 5 * 60 * 1e3);
+  } catch (e) {
+    toast(`Couldn't extract that clip: ${e.message}`);
+  }
+}
+var savingMedia = false;
+var GAINS_FILE = "volume-fix-gains.txt";
+async function saveAllMedia(rootOverride = null) {
+  if (savingMedia) return;
+  const jobs = [];
+  for (const d of batch.sortedDecks()) {
+    for (const c of d.inventory?.clips ?? []) if (hasEmbeddedMedia(c)) jobs.push({ d, c, folder: deckFolderName(d.name), name: clipMediaName(c) });
+  }
+  const status = $("media-status");
+  if (!jobs.length) {
+    status.textContent = batch.decks.size ? "No embedded media to save." : "Add presentations first.";
+    return;
+  }
+  let root = rootOverride;
+  if (!root) {
+    try {
+      root = await showDirectoryPicker({ id: "volume-fix-media", mode: "readwrite", startIn: outDir ?? "documents" });
+    } catch (e) {
+      if (e.name !== "AbortError") status.textContent = e.message;
+      return;
+    }
+  }
+  savingMedia = true;
+  try {
+    const existing = [];
+    for (const j of jobs) {
+      try {
+        const sub = await root.getDirectoryHandle(j.folder);
+        await sub.getFileHandle(j.name);
+        existing.push(`${j.folder}/${j.name}`);
+      } catch {
+      }
+    }
+    if (existing.length && !await dialog(
+      `Replace ${existing.length} existing file${existing.length === 1 ? "" : "s"}?`,
+      `<p>These already exist in <strong>${esc2(root.name)}</strong>:</p><ul>${existing.slice(0, 50).map((n) => `<li>${esc2(n)}</li>`).join("")}${existing.length > 50 ? `<li>\u2026and ${existing.length - 50} more</li>` : ""}</ul>`,
+      "Replace"
+    )) {
+      status.textContent = "";
+      return;
+    }
+    let done = 0, failed = 0, bytes = 0;
+    for (const j of jobs) {
+      status.textContent = `Saving ${done + failed + 1} of ${jobs.length}: ${j.folder}/${j.name}`;
+      try {
+        const sub = await root.getDirectoryHandle(j.folder, { create: true });
+        const fh = await sub.getFileHandle(j.name, { create: true });
+        const blob = await clipBlob(j.d, j.c);
+        await blob.stream().pipeTo(await fh.createWritable());
+        bytes += blob.size;
+        done++;
+      } catch (e) {
+        failed++;
+        console.warn(`Couldn't save ${j.folder}/${j.name}:`, e);
+      }
+    }
+    let gainsNote = "";
+    try {
+      const fh = await root.getFileHandle(GAINS_FILE, { create: true });
+      const w = await fh.createWritable();
+      await w.write(new Blob([playoutGainsText(batch.plan())], { type: "text/plain" }));
+      await w.close();
+      gainsNote = ` Gains for your playout software are in ${GAINS_FILE}.`;
+    } catch (e) {
+      gainsNote = ` (Couldn't write ${GAINS_FILE}: ${e.message})`;
+    }
+    const decks = new Set(jobs.map((j) => j.folder)).size;
+    status.textContent = `Saved ${done} media file${done === 1 ? "" : "s"} (${mb(bytes)}) from ${decks} presentation${decks === 1 ? "" : "s"} to ${root.name}${failed ? `; ${failed} failed` : ""}.${gainsNote}`;
+  } finally {
+    savingMedia = false;
+  }
+}
 async function playClip(key, original = false) {
   if (playing?.key === key) {
     stopPlayback();
@@ -1639,13 +1814,13 @@ async function playClip(key, original = false) {
   const row = batch.plan().rows.find((r) => r.key === key);
   const d = row && batch.decks.get(row.deck);
   if (!row || !d?.file) return;
-  d.zip ??= await openZip(blobSource(d.file, d.name));
-  const entry = d.zip.get(row.clip.mediaPart);
-  if (!entry) return;
-  const range = await entry.range();
-  const ext = (row.clip.mediaPart.match(/\.[^./]+$/)?.[0] ?? "").toLowerCase();
-  const data = range ? d.file.slice(range.offset, range.offset + range.length) : await entry.bytes();
-  const url = URL.createObjectURL(new Blob([data], { type: MIME[ext] ?? "" }));
+  let blob;
+  try {
+    blob = await clipBlob(d, row.clip);
+  } catch {
+    return;
+  }
+  const url = URL.createObjectURL(blob);
   const vol = original || !row.plan?.change ? row.vol : row.plan.newVol;
   const startS = row.clip.trim.startMs / 1e3;
   const lenS = row.measure?.loudness?.durationS;
@@ -1707,6 +1882,8 @@ function setupOptions() {
   $("clips").addEventListener("click", (e) => {
     const btn = e.target.closest?.("button[data-play]");
     if (btn) playClip(btn.dataset.play, e.altKey);
+    const dl = e.target.closest?.("button[data-dl]");
+    if (dl) downloadClip(dl.dataset.dl);
   });
   $("clips").addEventListener("change", (e) => {
     const key = e.target.dataset?.key;
@@ -1751,6 +1928,7 @@ setupEnv();
 setupDrop();
 setupOptions();
 $("pick-out").onclick = pickOutDir;
+$("save-media").onclick = () => saveAllMedia();
 $("write").onclick = writeAll;
 restoreOutDir();
 render();
@@ -1763,5 +1941,6 @@ window.__pptxLeveler = {
     render();
   },
   writeAll,
+  saveAllMedia,
   idle: () => !batch.analysing && !writing
 };

@@ -1265,7 +1265,31 @@ async function readPptx(zip, { fileName = "" } = {}) {
     }
     parts.push({ partName, container, slideNumber, mediaCount: instance });
   }
-  return { fileName, slideCount: slideOrder.size, parts, clips, warnings: deckWarnings };
+  const settings = await readShowSettings(zip);
+  const hasVideo = clips.some((c) => c.kind === "video" && c.status !== STATUS.LINKED);
+  if (hasVideo && settings.showMediaControls) {
+    deckWarnings.push(settings.showMediaControlsExplicit ? "media-controls-shown" : "media-controls-default");
+  }
+  return { fileName, slideCount: slideOrder.size, parts, clips, settings, warnings: deckWarnings };
+}
+async function readShowSettings(zip) {
+  const out = { showMediaControls: true, showMediaControlsExplicit: false, loop: false, showType: "present" };
+  const xml = await zip.text("ppt/presProps.xml");
+  if (!xml) return out;
+  const { root } = parseXml(xml);
+  const showPr = child(root, P, "showPr");
+  if (showPr) {
+    out.loop = attrValue(showPr, "loop") === "1" || attrValue(showPr, "loop") === "true";
+    if (child(showPr, P, "browse")) out.showType = "browse";
+    else if (child(showPr, P, "kiosk")) out.showType = "kiosk";
+  }
+  const ctrl = descendants(root, P14, "showMediaCtrls")[0];
+  if (ctrl) {
+    const v = attrValue(ctrl, "val");
+    out.showMediaControls = !(v === "0" || v === "false");
+    out.showMediaControlsExplicit = true;
+  }
+  return out;
 }
 function clipKey(c) {
   const where = c.container === "slide" && c.slideNumber != null ? `slide${c.slideNumber}` : c.partName;
@@ -1579,16 +1603,17 @@ function encodeWav(channels, sampleRate, { bits: bits2 = 24, float = false } = {
 // src/core/tone.js
 var enc2 = new TextEncoder();
 var dec2 = new TextDecoder("utf-8", { ignoreBOM: true });
-function generateTone({ lufs, seconds = 30, sampleRate = 48e3, channels = 2, fadeMs = 10, freq = 1e3 }) {
+function generateTone({ lufs, seconds = 30, sampleRate = 48e3, channels = 2, fadeMs = 0, freq = 1e3 }) {
   if (!Number.isFinite(lufs)) throw new Error("tone level must be a finite LUFS value");
   const amp = Math.min(1, Math.pow(10, lufs / 20));
-  const n = Math.round(seconds * sampleRate);
-  const fade = Math.max(1, Math.round(fadeMs / 1e3 * sampleRate));
+  const cycles = Math.max(1, Math.round(seconds * freq));
+  const n = Math.round(cycles * sampleRate / freq);
+  const fade = fadeMs > 0 ? Math.max(1, Math.round(fadeMs / 1e3 * sampleRate)) : 0;
   const x2 = new Float32Array(n);
   for (let i2 = 0; i2 < n; i2++) {
     let g = 1;
     if (i2 < fade) g = 0.5 - 0.5 * Math.cos(Math.PI * i2 / fade);
-    else if (i2 >= n - fade) g = 0.5 - 0.5 * Math.cos(Math.PI * (n - 1 - i2) / fade);
+    else if (fade && i2 >= n - fade) g = 0.5 - 0.5 * Math.cos(Math.PI * (n - 1 - i2) / fade);
     x2[i2] = amp * g * Math.sin(2 * Math.PI * freq * i2 / sampleRate);
   }
   return Array.from({ length: channels }, (_, c) => c === 0 ? x2 : x2.slice());
