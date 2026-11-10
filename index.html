@@ -3,8 +3,17 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>PPTX Leveler</title>
-<meta name="description" content="Match the loudness of every audio and video clip across a batch of PowerPoint files, in your browser.">
+<title>Volume Fix — even out audio levels across PowerPoint files</title>
+<meta name="description" content="Match the loudness of every audio and video clip across a batch of PowerPoint files, in your browser. Nothing is uploaded.">
+<link rel="canonical" href="https://volume-fix.com/">
+<link rel="icon" href="icons/logo.svg" type="image/svg+xml">
+<link rel="icon" href="icons/icon-32.png" type="image/png" sizes="32x32">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#1f5fbf">
+<meta property="og:title" content="Volume Fix">
+<meta property="og:description" content="Match the loudness of every audio and video clip across a batch of PowerPoint files.">
+<meta property="og:image" content="https://volume-fix.com/icons/icon-512.png">
 <!-- Cross-origin isolation for multithreaded ffmpeg.wasm on hosts that can't set COOP/COEP headers. No-op when the headers are already present. -->
 <script src="coi-serviceworker.min.js"></script>
 <link rel="stylesheet" href="app.css">
@@ -13,8 +22,8 @@
 <body>
 <header class="top">
   <div class="brand">
-    <svg class="logo" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 10v4M7 7v10M11 4v16M15 8v8M19 11v2" /></svg>
-    <h1>PPTX Leveler</h1>
+    <svg class="logo" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="14" fill="#1f5fbf"/><path d="M12 25h8l11-9v32l-11-9h-8z" fill="#fff"/><g stroke="#ffd166" stroke-width="4.5" stroke-linecap="round"><path d="M39 26h14"/><path d="M39 38h14"/></g></svg>
+    <h1>Volume Fix</h1>
   </div>
   <p class="tagline">Match the loudness of every clip across a batch of PowerPoint files.</p>
   <div id="env" class="env"></div>
@@ -59,6 +68,8 @@
         <label>Warn when a clip is turned down by more than <input type="number" id="opt-warn" min="1" max="60" step="1"> dB</label>
         <label><input type="checkbox" id="opt-copy"> Also save presentations that need no change</label>
         <label><input type="checkbox" id="opt-verify"> Check each saved file against its original</label>
+        <label><input type="checkbox" id="opt-tone"> Create a reference tone deck, <input type="number" id="opt-tone-s" min="5" max="600" step="5"> seconds long</label>
+        <label><input type="checkbox" id="opt-excerpts"> Save media for the batch log (whole clip up to 1 MB, otherwise the first 5 seconds)</label>
         <div class="row">
           <button type="button" id="optout-load" class="secondary">Load opt-out list…</button>
           <button type="button" id="optout-save" class="secondary">Save opt-out list</button>
@@ -73,6 +84,7 @@
           <tr>
             <th scope="col" class="c-skip" title="Don't normalise this clip">Skip</th>
             <th scope="col" class="c-id">#</th>
+            <th scope="col" class="c-play"><span class="sr">Play</span></th>
             <th scope="col">Presentation</th>
             <th scope="col" class="c-n">Slide</th>
             <th scope="col">Clip</th>
