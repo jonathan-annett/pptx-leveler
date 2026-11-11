@@ -70,6 +70,7 @@
         <label><input type="checkbox" id="opt-verify"> Check each saved file against its original</label>
         <label><input type="checkbox" id="opt-tone"> Create a reference tone deck, <input type="number" id="opt-tone-s" min="5" max="600" step="5"> seconds long</label>
         <label><input type="checkbox" id="opt-excerpts"> Save media for the batch log (whole clip up to 1 MB, otherwise the first 5 seconds)</label>
+        <p class="small muted">Volumes are set with PowerPoint's volume curve: <span id="curve-opt"></span>. <a href="calibrate.html">Calibrate it with a loopback recording</a>.</p>
         <div class="row">
           <button type="button" id="optout-load" class="secondary">Load opt-out list…</button>
           <button type="button" id="optout-save" class="secondary">Save opt-out list</button>
@@ -134,7 +135,7 @@
       </details>
     </div>
   </div>
-  <p class="muted"><span id="version"></span> · Loudness per ITU-R BS.1770-4 · Volume curve <span id="curve"></span></p>
+  <p class="muted"><span id="version"></span> · Loudness per ITU-R BS.1770-4 · <a href="calibrate.html">Volume curve <span id="curve"></span></a></p>
 </footer>
 
 <dialog id="dlg">

@@ -1368,6 +1368,13 @@ async function buildReplacements(zip, deck, planByKey) {
 
 // src/core/zip-writer.js
 var U32_MAX2 = 4294967295;
+var SIG_CDH2 = 33639248;
+function dosDateTime(d) {
+  return {
+    time: d.getHours() << 11 | d.getMinutes() << 5 | d.getSeconds() >> 1,
+    date: d.getFullYear() - 1980 << 9 | d.getMonth() + 1 << 5 | d.getDate()
+  };
+}
 var CRC_TABLE = (() => {
   const t = new Uint32Array(256);
   for (let n = 0; n < 256; n++) {
@@ -1388,7 +1395,7 @@ function setU64(dv, off, n) {
   dv.setUint32(off, n % 2 ** 32, true);
   dv.setUint32(off + 4, Math.floor(n / 2 ** 32), true);
 }
-async function* rewriteZip(zip, replacements, { chunkSize = 8 << 20, level = 6 } = {}) {
+async function* rewriteZip(zip, replacements, { chunkSize = 8 << 20, level = 6, additions = /* @__PURE__ */ new Map() } = {}) {
   for (const name of replacements.keys()) {
     if (!zip.has(name)) throw new ZipWriteError(`cannot replace missing entry ${name}`);
   }
@@ -1447,6 +1454,49 @@ async function* rewriteZip(zip, replacements, { chunkSize = 8 << 20, level = 6 }
       newCd.set(e, rec);
     }
   }
+  const addedCd = [];
+  const enc3 = new TextEncoder();
+  const { time, date } = dosDateTime(/* @__PURE__ */ new Date());
+  for (const [name, bytes] of additions) {
+    if (zip.has(name)) throw new ZipWriteError(`cannot add existing entry ${name}`);
+    const offset = pos;
+    if (offset > U32_MAX2) throw new ZipWriteError("output needs zip64 offsets (over 4 GB); not supported in v1");
+    const nameBytes = enc3.encode(name);
+    const data = deflateSync(bytes, { level });
+    const crc = crc32(bytes);
+    const lh = new Uint8Array(30 + nameBytes.length);
+    const lv = new DataView(lh.buffer);
+    lv.setUint32(0, 67324752, true);
+    lv.setUint16(4, 20, true);
+    lv.setUint16(6, 2048, true);
+    lv.setUint16(8, 8, true);
+    lv.setUint16(10, time, true);
+    lv.setUint16(12, date, true);
+    lv.setUint32(14, crc, true);
+    lv.setUint32(18, data.length, true);
+    lv.setUint32(22, bytes.length, true);
+    lv.setUint16(26, nameBytes.length, true);
+    lh.set(nameBytes, 30);
+    yield lh;
+    yield data;
+    pos += lh.length + data.length;
+    const rec = new Uint8Array(46 + nameBytes.length);
+    const rv = new DataView(rec.buffer);
+    rv.setUint32(0, SIG_CDH2, true);
+    rv.setUint16(4, 20, true);
+    rv.setUint16(6, 20, true);
+    rv.setUint16(8, 2048, true);
+    rv.setUint16(10, 8, true);
+    rv.setUint16(12, time, true);
+    rv.setUint16(14, date, true);
+    rv.setUint32(16, crc, true);
+    rv.setUint32(20, data.length, true);
+    rv.setUint32(24, bytes.length, true);
+    rv.setUint16(28, nameBytes.length, true);
+    rv.setUint32(42, offset, true);
+    rec.set(nameBytes, 46);
+    addedCd.push(rec);
+  }
   const cdOffset = pos;
   let cdSize = 0;
   for (const e of zip.entries) {
@@ -1454,14 +1504,19 @@ async function* rewriteZip(zip, replacements, { chunkSize = 8 << 20, level = 6 }
     yield rec;
     cdSize += rec.length;
   }
-  if (cdOffset > U32_MAX2 || cdSize > U32_MAX2 || zip.entries.length > 65535) {
+  for (const rec of addedCd) {
+    yield rec;
+    cdSize += rec.length;
+  }
+  const count = zip.entries.length + addedCd.length;
+  if (cdOffset > U32_MAX2 || cdSize > U32_MAX2 || count > 65535) {
     throw new ZipWriteError("output needs zip64 (over 4 GB or 65535 entries); not supported in v1");
   }
   const eocd = new Uint8Array(22 + zip.comment.length);
   const ev = new DataView(eocd.buffer);
   ev.setUint32(0, 101010256, true);
-  ev.setUint16(8, zip.entries.length, true);
-  ev.setUint16(10, zip.entries.length, true);
+  ev.setUint16(8, count, true);
+  ev.setUint16(10, count, true);
   ev.setUint32(12, cdSize, true);
   ev.setUint32(16, cdOffset, true);
   ev.setUint16(20, zip.comment.length, true);
@@ -1639,6 +1694,9 @@ function setPlaceholderText(xml, phType, lines, sz) {
   const end = paras[paras.length - 1].end;
   return xml.slice(0, start) + paragraphs(lines, sz) + xml.slice(end);
 }
+function setPlayDuration(xml, ms) {
+  return xml.replace(/(<p:cmd\b[^>]*\bcmd="playFrom[^"]*"[^>]*>\s*<p:cBhvr>\s*<p:cTn\b[^>]*?\bdur=")\d+(")/g, (m, a, b) => `${a}${Math.round(ms)}${b}`);
+}
 function removeTrim(xml) {
   const { root } = parseXml(xml);
   const trims = descendants(root, NS.p14, "trim");
@@ -1666,7 +1724,7 @@ async function buildToneDeck(templateZip, { lref, batchId, date, deckCount, clip
       tones.push({ slide: c.slideNumber, channels: channels2, mediaPart: c.mediaPart });
     }
     let bytes = patchVolumes(await templateZip.get(partName).bytes(), partClips.map((c) => ({ patch: c.patch, newVol: 1e5, oldRaw: c.volRaw })));
-    let xml = removeTrim(dec2.decode(bytes));
+    let xml = setPlayDuration(removeTrim(dec2.decode(bytes)), seconds * 1e3);
     const channels = tones.find((t) => t.mediaPart === partClips[0].mediaPart).channels;
     xml = setPlaceholderText(xml, "ctrTitle", [`Reference tone \xB7 ${channels === 1 ? "mono" : "stereo"} \xB7 ${fmt(lref)} LUFS`]);
     xml = setPlaceholderText(xml, "subTitle", [

@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Calibrate — Volume Fix</title>
+<meta name="description" content="Measure how PowerPoint's per-clip volume setting changes the level, using a loopback recording.">
+<link rel="icon" href="icons/logo.svg" type="image/svg+xml">
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#1f5fbf">
+<script src="coi-serviceworker.min.js"></script>
+<link rel="stylesheet" href="app.css">
+<script type="module" src="calibrate.js"></script>
+</head>
+<body>
+<header class="top">
+  <div class="brand">
+    <svg class="logo" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="14" fill="#1f5fbf"/><path d="M12 25h8l11-9v32l-11-9h-8z" fill="#fff"/><g stroke="#ffd166" stroke-width="4.5" stroke-linecap="round"><path d="M39 26h14"/><path d="M39 38h14"/></g></svg>
+    <h1>Calibrate PowerPoint's volume</h1>
+  </div>
+  <p class="tagline"><a href="./">← Back to Volume Fix</a></p>
+</header>
+
+<main>
+  <section class="step">
+    <p class="intro">Volume Fix turns clips down by changing PowerPoint's per-clip volume setting. On Office 365 PowerPoint 16 the setting is a plain linear amplitude scale (40% = −8 dB), measured with this page. If you show with a different PowerPoint version, this page measures yours: play a calibration deck, record what PowerPoint sends to your sound card, and drop the recording here. Do this on the PowerPoint version you show with; it only needs doing again after a major Office update.</p>
+    <p class="small muted">Currently using: <strong id="active-curve"></strong> <button type="button" id="reset" class="link" hidden>Go back to the default</button></p>
+  </section>
+
+  <section class="step" aria-labelledby="c1">
+    <div class="step-head"><span class="num">1</span><h2 id="c1">Download the calibration deck</h2></div>
+    <div class="row">
+      <button type="button" id="make-deck" class="primary">Download calibration deck</button>
+      <span id="deck-status" class="muted small"></span>
+    </div>
+    <p class="small muted" id="deck-desc"></p>
+  </section>
+
+  <section class="step" aria-labelledby="c2">
+    <div class="step-head"><span class="num">2</span><h2 id="c2">Record it with loopback</h2></div>
+    <ol class="steps">
+      <li>In Audacity, click <em>Audio Setup</em> → <em>Host</em> → <strong>Windows WASAPI</strong>.</li>
+      <li><em>Audio Setup</em> → <em>Recording Device</em> → the device PowerPoint plays through, ending in <strong>(loopback)</strong>. Set <em>Recording Channels</em> to 2 (Stereo).</li>
+      <li>Close other programs that make sound. Loopback records before the speaker volume, so you can turn the speakers down.</li>
+      <li>Press Record in Audacity, then open the calibration deck and start the slide show from the first slide (F5). It runs by itself, about 80 seconds.</li>
+      <li>After the last slide's tone, stop recording and choose <em>File</em> → <em>Export Audio</em> → <strong>WAV, 32-bit float</strong>.</li>
+    </ol>
+  </section>
+
+  <section class="step" aria-labelledby="c3">
+    <div class="step-head"><span class="num">3</span><h2 id="c3">Measure the recording</h2></div>
+    <div id="drop" class="drop" tabindex="0" role="button">
+      <p><strong>Drop the recording (.wav) here</strong></p>
+      <p class="muted">or <button type="button" id="pick" class="link">choose the file</button>. It stays on this computer.</p>
+    </div>
+    <div id="result" hidden>
+      <div id="summary" class="summary"></div>
+      <div id="chart" class="chart"></div>
+      <div class="table-wrap"><table id="points"><thead><tr><th scope="col">Volume setting</th><th scope="col" class="c-n">Measured</th><th scope="col" class="c-n">Default curve</th><th scope="col" class="c-n">Difference</th></tr></thead><tbody></tbody></table></div>
+      <div class="row" style="margin-top:12px">
+        <button type="button" id="use" class="primary">Use this curve in Volume Fix</button>
+        <button type="button" id="download" class="secondary">Download curve file</button>
+        <span id="use-status" class="muted small"></span>
+      </div>
+      <p class="small muted">The curve is saved in this browser. To make it the default for everyone using the same PowerPoint version, send the curve file to the developer.</p>
+    </div>
+    <div id="error" class="notice bad" hidden></div>
+  </section>
+</main>
+
+<footer class="foot small"><p class="muted"><span id="version"></span> · <a href="./">Volume Fix</a></p></footer>
+<input type="file" id="file" accept=".wav,audio/wav,audio/x-wav" hidden>
+</body>
+</html>

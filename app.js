@@ -1,9 +1,11 @@
 // config/volume-curve.json
 var volume_curve_default = {
-  version: "placeholder-1",
-  description: "PLACEHOLDER until measured: assumes PowerPoint's vol is linear amplitude, dB = 20*log10(vol/100000). Replace with measured points from the calibration helper (milestone 7) for Office 365 PowerPoint 16.0.20527.",
-  powerpoint: "unmeasured",
-  type: "amplitude"
+  version: "ppt16-measured-2026-11-11",
+  description: "Measured with the Volume Fix calibration deck and a WASAPI loopback recording on Office 365 PowerPoint 16.0.20527: PowerPoint's per-clip vol is linear amplitude, dB = 20*log10(vol/100000). All 17 steps from 100% to 1% matched the formula to within 0.01 dB, and the drift check was 0.000 dB.",
+  powerpoint: "Office 365 PowerPoint 16.0.20527 (Windows 11)",
+  type: "amplitude",
+  measuredAt: "2026-11-11",
+  measuredPoints: [[1e3, -40], [2e3, -33.98], [3e3, -30.46], [5e3, -26.02], [7e3, -23.1], [1e4, -20], [15e3, -16.48], [2e4, -13.98], [25e3, -12.04], [3e4, -10.46], [4e4, -7.96], [5e4, -6.02], [6e4, -4.44], [7e4, -3.1], [8e4, -1.94], [9e4, -0.92], [1e5, 0]]
 };
 
 // src/core/volume-curve.js
@@ -45,6 +47,18 @@ function dbToVol(db, curve2) {
 }
 function beyondCurve(db, curve2) {
   return curve2.type === "table" && db < curve2.points[0][1];
+}
+
+// src/ui/curve-store.js
+var KEY = "volume-fix:curve";
+var DEFAULT_CURVE = validateCurve(volume_curve_default);
+function loadCurve() {
+  try {
+    const raw = localStorage.getItem(KEY);
+    if (raw) return { curve: validateCurve(JSON.parse(raw)), measured: true };
+  } catch {
+  }
+  return { curve: DEFAULT_CURVE, measured: false };
 }
 
 // src/core/xml.js
@@ -1140,11 +1154,11 @@ function makeBatchId(d = /* @__PURE__ */ new Date()) {
 }
 
 // src/ui/app.js
-var VERSION = true ? "0.3.0" : "dev";
+var VERSION = true ? "0.4.0" : "dev";
 var $ = (id) => document.getElementById(id);
 var esc2 = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 var ffmpegBase = new URL("vendor/", document.baseURI).href;
-var curve = validateCurve(volume_curve_default);
+var { curve, measured: curveMeasured } = loadCurve();
 var batch = new Batch({ curve, options: loadOptions() });
 var outDir = null;
 var outGranted = false;
@@ -1922,7 +1936,8 @@ function setupEnv() {
     n.textContent = "This browser can't save files to a folder. Use Chrome or Edge on Windows or macOS.";
   }
   $("version").textContent = `Volume Fix ${VERSION}`;
-  $("curve").textContent = curve.version;
+  $("curve").textContent = curveMeasured ? `${curve.version} (measured on this computer)` : `${curve.version} (default)`;
+  $("curve-opt").textContent = curveMeasured ? `measured on this computer (${curve.version})` : `the default, measured on Office 365 PowerPoint 16 (${curve.version})`;
 }
 setupEnv();
 setupDrop();
