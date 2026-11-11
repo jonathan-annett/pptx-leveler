@@ -61,6 +61,59 @@ function loadCurve() {
   return { curve: DEFAULT_CURVE, measured: false };
 }
 
+// src/ui/pwa.js
+var RELOADED = "volume-fix:isolation-reload";
+function bar(message, actionLabel, action) {
+  if (document.querySelector(".update-bar")) return;
+  const el = document.createElement("div");
+  el.className = "update-bar";
+  el.setAttribute("role", "status");
+  el.innerHTML = `<span></span><button type="button" class="primary"></button><button type="button" class="link" aria-label="Dismiss">Later</button>`;
+  el.querySelector("span").textContent = message;
+  const [act, later] = el.querySelectorAll("button");
+  act.textContent = actionLabel;
+  act.onclick = action;
+  later.onclick = () => el.remove();
+  document.body.appendChild(el);
+}
+function setupPwa({ installButton = null } = {}) {
+  if (!("serviceWorker" in navigator)) return;
+  const hadController = !!navigator.serviceWorker.controller;
+  navigator.serviceWorker.register("sw.js").catch((e) => console.warn("Service worker not registered:", e));
+  navigator.serviceWorker.addEventListener("controllerchange", () => {
+    if (!hadController) {
+      let reloaded = false;
+      try {
+        reloaded = sessionStorage.getItem(RELOADED) === "1";
+        sessionStorage.setItem(RELOADED, "1");
+      } catch {
+      }
+      if (!self.crossOriginIsolated && !reloaded) location.reload();
+      return;
+    }
+    bar("A new version of Volume Fix is ready.", "Reload", () => location.reload());
+  });
+  if (installButton) {
+    let deferred = null;
+    window.addEventListener("beforeinstallprompt", (e) => {
+      e.preventDefault();
+      deferred = e;
+      installButton.hidden = false;
+    });
+    installButton.addEventListener("click", async () => {
+      if (!deferred) return;
+      deferred.prompt();
+      await deferred.userChoice.catch(() => {
+      });
+      deferred = null;
+      installButton.hidden = true;
+    });
+    window.addEventListener("appinstalled", () => {
+      installButton.hidden = true;
+    });
+  }
+}
+
 // src/core/xml.js
 var NS = {
   p: "http://schemas.openxmlformats.org/presentationml/2006/main",
@@ -1154,7 +1207,7 @@ function makeBatchId(d = /* @__PURE__ */ new Date()) {
 }
 
 // src/ui/app.js
-var VERSION = true ? "0.4.0" : "dev";
+var VERSION = true ? "1.0.0" : "dev";
 var $ = (id) => document.getElementById(id);
 var esc2 = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 var ffmpegBase = new URL("vendor/", document.baseURI).href;
@@ -1948,6 +2001,7 @@ function setupEnv() {
   $("curve-opt").textContent = curveMeasured ? `measured on this computer (${curve.version})` : `the default, measured on Office 365 PowerPoint 16 (${curve.version})`;
 }
 setupEnv();
+setupPwa({ installButton: $("install") });
 setupDrop();
 setupOptions();
 $("pick-out").onclick = pickOutDir;
