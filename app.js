@@ -1871,6 +1871,14 @@ function setupOptions() {
   bind("opt-tone", "toneDeck", (el) => el.checked);
   bind("opt-tone-s", "toneSeconds", (el) => Math.max(5, Math.min(600, Number(el.value) || 30)));
   bind("opt-excerpts", "excerpts", (el) => el.checked);
+  for (const btn of document.querySelectorAll(".help-btn")) {
+    btn.addEventListener("click", () => {
+      const panel = $(btn.getAttribute("aria-controls"));
+      const open2 = panel.hidden;
+      panel.hidden = !open2;
+      btn.setAttribute("aria-expanded", String(open2));
+    });
+  }
   $("optout-load").onclick = () => $("optout-input").click();
   $("optout-input").onchange = async (e) => {
     const f = e.target.files[0];

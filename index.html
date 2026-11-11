@@ -64,7 +64,15 @@
     <details class="options">
       <summary>Options</summary>
       <div class="opts">
-        <label><input type="checkbox" id="opt-keep"> Keep each clip's original volume as an offset</label>
+        <div>
+          <label><input type="checkbox" id="opt-keep"> Keep each clip's original volume as an offset</label>
+          <button type="button" class="help-btn" aria-expanded="false" aria-controls="help-keep" title="What does this do?">?</button>
+          <div id="help-keep" class="help" hidden>
+            <p><strong>Off (normal):</strong> Volume Fix ignores each clip's current volume setting and matches clips purely by how loud they measure. The quietest clip ends up at 100% and every other clip is set to whatever makes it sound just as loud. A clip someone had set to 30% gets reset to its matching level, which can be higher or lower than 30%.</p>
+            <p><strong>On:</strong> each clip's existing setting is kept as a deliberate offset on top of the matching. If a presenter set a clip to 50% (−6 dB) to sit it under their voice, it stays 6 dB quieter than the rest after normalising, instead of being raised to match.</p>
+            <p>Turn it on only for decks where someone has already balanced clips on purpose. Most decks just carry PowerPoint's default (80% for video), and there it would only lower every clip by the same amount, so leave it off.</p>
+          </div>
+        </div>
         <label>Warn when a clip is turned down by more than <input type="number" id="opt-warn" min="1" max="60" step="1"> dB</label>
         <label><input type="checkbox" id="opt-copy"> Also save presentations that need no change</label>
         <label><input type="checkbox" id="opt-verify"> Check each saved file against its original</label>
