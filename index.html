@@ -44,21 +44,9 @@
     <ul id="decks" class="decks"></ul>
   </section>
 
-  <section class="step" aria-labelledby="h-out">
-    <div class="step-head">
-      <span class="num">2</span>
-      <h2 id="h-out">Choose an output folder</h2>
-    </div>
-    <div class="row">
-      <button type="button" id="pick-out">Choose folder…</button>
-      <span id="out-status" class="muted">No folder chosen.</span>
-    </div>
-    <p class="muted small">Normalised copies are saved as <code>name_normalized.pptx</code>. Your original files are never changed.</p>
-  </section>
-
   <section class="step" aria-labelledby="h-review">
     <div class="step-head">
-      <span class="num">3</span>
+      <span class="num">2</span>
       <h2 id="h-review">Review</h2>
     </div>
     <details class="options">
@@ -84,12 +72,15 @@
           <button type="button" id="optout-save" class="secondary">Save opt-out list</button>
           <span id="optout-status" class="muted small"></span>
         </div>
+        <div class="opt-group">
+          <p class="small"><strong>Playing clips from other software?</strong> Copy every embedded audio and video file into a folder, one subfolder per presentation, named by slide (<code>slide16-clip2.mov</code>), with <code>volume-fix-gains.txt</code> listing the gain each file needs. This doesn't make the normalised presentations; use <em>Save</em> below for those.</p>
+          <div class="row">
+            <button type="button" id="save-media" class="secondary">Save all media files…</button>
+            <span id="media-status" class="muted small"></span>
+          </div>
+        </div>
       </div>
     </details>
-    <div class="row tools">
-      <button type="button" id="save-media" class="secondary" title="Copy every embedded audio and video file to a folder you choose, one subfolder per presentation, named by slide (slide16-clip2.mov), plus volume-fix-gains.txt listing the gain each file needs in other playout software. The presentations aren't changed.">Save all media files…</button>
-      <span id="media-status" class="muted small"></span>
-    </div>
     <div id="deck-notes" class="notice warn" hidden></div>
     <div id="summary" class="summary"></div>
     <div class="table-wrap">
@@ -113,6 +104,18 @@
       </table>
       <p id="empty" class="muted empty">Add presentations to see their clips here.</p>
     </div>
+  </section>
+
+  <section class="step" aria-labelledby="h-out">
+    <div class="step-head">
+      <span class="num">3</span>
+      <h2 id="h-out">Choose an output folder</h2>
+    </div>
+    <div class="row">
+      <button type="button" id="pick-out">Choose folder…</button>
+      <span id="out-status" class="muted">No folder chosen.</span>
+    </div>
+    <p class="muted small">Normalised copies are saved as <code>name_normalized.pptx</code>. Your original files are never changed.</p>
   </section>
 
   <section class="step" aria-labelledby="h-write">
